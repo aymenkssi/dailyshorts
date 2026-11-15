@@ -9,19 +9,24 @@
 | Script | FreeLLMAPI `auto:smart` (meilleur modèle gratuit dispo : Gemini, Groq, Cerebras, Mistral…) | Cloudflare gpt-oss-120b |
 | Vérification des faits | FreeLLMAPI `fusion` (plusieurs modèles + un juge) | `auto:smart`, puis Cloudflare |
 | Images (~45, style anime, 9:16) | Cloudflare FLUX.2 klein | FreeLLMAPI (NVIDIA, SiliconFlow…) |
-| Voix off + minutage des mots | Kokoro, sur le VPS | — |
+| Voix off + minutage des mots | Kokoro, dans le conteneur | — |
 | Montage | ffmpeg + Pillow : zoom/pan fluide, sous-titres mot à mot | — |
 | Publication | API YouTube, Instagram, TikTok | chaque plateforme indépendante |
 
 Coût : 0 €. Le quota gratuit Cloudflare (10 000 « neurons »/jour) couvre une vidéo (~5 000) ; s'il est épuisé, les images passent par FreeLLMAPI. Pas d'animation IA des personnages : aucun service gratuit ne le permet au quotidien.
 
+## Déploiement
+
+Docker Compose derrière Traefik, comme Waselni : `freellmapi` (local uniquement), `shorts` (planificateur interne : une vidéo par jour à `RUN_AT`, heure de Paris) et `media` (sert `/shorts/*.mp4` pour Instagram).
+
 ## Commandes
 
 ```bash
-.venv/bin/python tools/check_services.py     # tester les services
-.venv/bin/python main.py --no-publish        # générer sans publier
-.venv/bin/python main.py                     # générer + publier
-.venv/bin/python main.py --date 2026-11-12   # reprendre un jour (étapes faites sautées)
+docker compose up -d --build                                  # démarrer / mettre à jour
+docker compose logs -f shorts                                 # suivre le pipeline
+docker compose exec shorts python tools/check_services.py     # tester les services
+docker compose exec shorts python main.py --no-publish        # générer sans publier
+docker compose exec shorts python main.py --date 2026-11-12   # reprendre un jour (étapes faites sautées)
 ```
 
 ## Points d'attention

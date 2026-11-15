@@ -1,0 +1,75 @@
+# Daily Shorts — même organisation que Waselni : Docker Compose derrière le Traefik du VPS
+# (réseau externe "web", entrée "websecure", certificats "letsencrypt").
+services:
+  freellmapi:
+    image: ghcr.io/tashfeenahmed/freellmapi:latest
+    container_name: dailyshorts-freellmapi
+    restart: always
+    env_file:
+      - ./freellmapi.env
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+    # Tableau de bord accessible uniquement depuis le VPS (tunnel SSH) : jamais via Traefik
+    ports:
+      - "127.0.0.1:${FREELLMAPI_PORT:-3001}:3001"
+    volumes:
+      - freellmapi_data:/app/server/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/ping').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  shorts:
+    build: .
+    container_name: dailyshorts-pipeline
+    restart: always
+    env_file:
+      - ./.env
+    environment:
+      LLM_BASE_URL: http://freellmapi:3001/v1
+      PUBLIC_VIDEO_DIR: /public
+    volumes:
+      - ./state:/app/state
+      - ./output:/app/output
+      - ./public:/public
+      - ./assets/music:/app/assets/music:ro
+      - kokoro_cache:/app/cache
+    depends_on:
+      freellmapi:
+        condition: service_healthy
+    networks:
+      - internal
+
+  # Sert /shorts/*.mp4 pour qu'Instagram puisse télécharger la vidéo du jour
+  media:
+    image: nginx:alpine
+    container_name: dailyshorts-media
+    restart: always
+    volumes:
+      - ./public:/usr/share/nginx/html/shorts:ro
+      - ./deploy/media-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - web
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=web
+      - traefik.http.routers.dailyshorts-media.rule=Host(`${SHORTS_DOMAIN:-aymendridi.com}`) && PathPrefix(`/shorts/`)
+      - traefik.http.routers.dailyshorts-media.priority=100
+      - traefik.http.routers.dailyshorts-media.entrypoints=websecure
+      - traefik.http.routers.dailyshorts-media.tls.certresolver=letsencrypt
+      - traefik.http.services.dailyshorts-media.loadbalancer.server.port=80
+
+volumes:
+  freellmapi_data:
+  kokoro_cache:
+
+networks:
+  web:
+    external: true
+  internal:
+    driver: bridge

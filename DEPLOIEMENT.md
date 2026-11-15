@@ -1,40 +1,28 @@
-# Guide de déploiement détaillé
+# Guide de déploiement — Docker + Traefik (comme Waselni)
 
-Tout tourne sur ton VPS : **FreeLLMAPI** (routeur de LLM gratuits, dans Docker, accessible seulement en local) et **le pipeline** (Python, lancé chaque jour par un timer systemd).
+Daily Shorts se déploie comme Waselni : une pile **Docker Compose** derrière le **Traefik** déjà en place sur le VPS (réseau externe `web`, entrée `websecure`, certificats `letsencrypt`).
 
-| Partie | Temps estimé |
-|---|---|
-| 1-2. Préparer le VPS + installer FreeLLMAPI | 20 min |
-| 3-4. Clés gratuites (LLM + Cloudflare) | 30 min |
-| 5-7. Installer le pipeline + première vidéo de test | 30 min |
-| 8-10. YouTube, Instagram, TikTok | 1 h à 2 h (+ délai d'audit TikTok) |
-| 11-12. Première publication + automatisation | 15 min |
+| Conteneur | Rôle | Exposition |
+|---|---|---|
+| `dailyshorts-freellmapi` | routeur de LLM gratuits | `127.0.0.1:3001` seulement (tunnel SSH) |
+| `dailyshorts-pipeline` | génère et publie la vidéo chaque jour à 16 h 47 (heure de Paris) | aucune |
+| `dailyshorts-media` | sert `https://aymendridi.com/shorts/*.mp4` pour Instagram | via Traefik |
 
-Dans les commandes : `user@IP_VPS` = ton compte SSH sur le VPS. Les blocs marqués **(PC)** se lancent sur ton ordinateur, les autres sur le VPS.
+Les commandes se lancent sur le VPS, sauf les blocs marqués **(PC)**. `user@IP_VPS` = ton accès SSH.
 
 ---
 
-## 1. Préparer le VPS
-
-**Vérifier le système** (Ubuntu 22.04 ou 24.04 recommandé) :
+## 1. Vérifier le VPS
 
 ```bash
-lsb_release -d            # version d'Ubuntu
-python3 --version         # doit être 3.10, 3.11 ou 3.12 (Kokoro ne supporte pas 3.13)
-free -h                   # RAM
-df -h /                   # au moins 10 Go libres
+docker compose version                    # Compose v2
+docker network ls | grep -w web           # le réseau de Traefik utilisé par Waselni
+docker ps --format '{{.Names}}' | grep -i traefik
+free -h                                   # 4 Go conseillés (voix + build)
+df -h /                                   # ~10 Go libres (image ~2 Go + vidéos)
 ```
 
-**Mettre à jour et installer les paquets** :
-
-```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y git ffmpeg espeak-ng python3-venv docker.io docker-compose-v2
-sudo systemctl enable --now docker
-sudo docker compose version     # doit afficher une version v2
-```
-
-**Ajouter de la mémoire virtuelle si le VPS a moins de 4 Go de RAM** (l'installation de torch et la voix en ont besoin) :
+S'il manque de la RAM (moins de 4 Go), ajoute du swap :
 
 ```bash
 sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
@@ -42,153 +30,144 @@ sudo mkswap /swapfile && sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```
 
-> Si `python3 --version` affiche 3.13 ou plus : installe Python 3.12 (`sudo apt install python3.12 python3.12-venv`, ou via le PPA deadsnakes) et remplace `python3` par `python3.12` à l'étape 5.
+Le domaine `aymendridi.com` doit déjà être routé par Traefik (portfolio). Sinon, ajoute un enregistrement DNS A vers le VPS : Traefik obtiendra le certificat tout seul au premier accès.
 
 ---
 
-## 2. Installer FreeLLMAPI
+## 2. Récupérer le projet et préparer les secrets
 
 ```bash
-sudo git clone https://github.com/tashfeenahmed/freellmapi.git /opt/freellmapi
-cd /opt/freellmapi
-printf "ENCRYPTION_KEY=%s\nPORT=3001\n" "$(openssl rand -hex 32)" | sudo tee .env >/dev/null
-sudo chmod 600 .env
-sudo cat .env        # ⚠️ copie ENCRYPTION_KEY dans ton gestionnaire de mots de passe
-sudo docker compose up -d
+sudo git clone https://github.com/aymenkssi/dailyshorts.git /opt/dailyshorts
+sudo chown -R $USER:$USER /opt/dailyshorts
+cd /opt/dailyshorts
+
+# Dossiers montés dans le conteneur (il tourne avec l'UID 1000, pas en root)
+mkdir -p state output public
+sudo chown -R 1000:1000 state output public
+
+# Clé de chiffrement de FreeLLMAPI
+printf "ENCRYPTION_KEY=%s\n" "$(openssl rand -hex 32)" > freellmapi.env
+chmod 600 freellmapi.env
+cat freellmapi.env        # ⚠️ copie la clé dans ton gestionnaire de mots de passe
+
+# Configuration du pipeline
+cp .env.example .env && chmod 600 .env
 ```
 
-Vérifier :
-
-```bash
-sudo docker compose ps                                    # état "healthy" après ~30 s
-ss -ltnp | grep 3001                                      # doit montrer 127.0.0.1:3001, PAS 0.0.0.0
-sudo docker compose logs freellmapi | grep -i "setup code" # note ce code pour l'étape 3
-```
-
-Ne mets jamais `HOST_BIND=0.0.0.0` : le service contiendra toutes tes clés et ne doit pas être exposé sur Internet.
+Comme pour Waselni, les secrets sont dans des fichiers `.env` à côté du `docker-compose.yml` : ils sont exclus de Git, ne les committe jamais.
 
 ---
 
-## 3. Clés LLM gratuites + configuration de FreeLLMAPI
+## 3. Démarrer FreeLLMAPI et le configurer
 
-### 3a. Créer des clés gratuites
+```bash
+docker compose up -d freellmapi
+docker compose ps                                          # "healthy" après ~30 s
+docker compose logs freellmapi | grep -i "setup code"      # code de première connexion
+```
 
-Plus tu en ajoutes, plus les scripts sont bons et fiables. Toutes sont gratuites, sans carte bancaire :
+### 3a. Créer des clés gratuites (navigateur)
 
-| Fournisseur | Où créer la clé | Intérêt |
-|---|---|---|
-| Google AI Studio (Gemini) | aistudio.google.com/apikey | très bon en écriture (voir la note ci-dessous) |
-| Groq | console.groq.com/keys | très rapide |
-| Cerebras | cloud.cerebras.ai → API Keys | très rapide, gros modèles |
-| Mistral | console.mistral.ai → API Keys (plan gratuit « Experiment ») | bon en anglais |
-| OpenRouter | openrouter.ai/settings/keys | accès à de nombreux modèles `:free` |
-| NVIDIA | build.nvidia.com → Get API Key | LLM + **images Flux de secours** |
+| Fournisseur | Où créer la clé |
+|---|---|
+| Groq | console.groq.com/keys |
+| Cerebras | cloud.cerebras.ai → API Keys |
+| Mistral | console.mistral.ai → API Keys (plan gratuit « Experiment ») |
+| OpenRouter | openrouter.ai/settings/keys |
+| NVIDIA (LLM + images de secours) | build.nvidia.com → Get API Key |
+| Google AI Studio (Gemini) | aistudio.google.com/apikey — l'offre gratuite est restreinte pour les services destinés à l'UE, à toi de juger |
 
-> Note Gemini : les conditions de l'offre gratuite de Google limitent son usage pour des services destinés à l'UE. Pour un usage personnel c'est à ton appréciation ; tu peux t'en passer, les autres suffisent.
+### 3b. Ouvrir le tableau de bord
 
-### 3b. Ouvrir le tableau de bord via un tunnel SSH
-
-**(PC)** — laisse cette fenêtre ouverte :
+**(PC)** — laisse la fenêtre ouverte :
 
 ```bash
 ssh -L 3001:127.0.0.1:3001 user@IP_VPS
 ```
 
-Puis ouvre **http://localhost:3001** dans ton navigateur.
+Puis http://localhost:3001 :
 
-### 3c. Configurer
-
-1. **Créer le compte admin** : e-mail + mot de passe ; entre le *setup code* noté à l'étape 2.
-2. **Page Keys** : clique sur chaque fournisseur et colle sa clé.
-3. **Clé unifiée** : copie la clé `freellmapi-…` affichée en haut de la page Keys → elle ira dans `LLM_API_KEY`.
-4. **Page Playground** : choisis le modèle `auto:smart`, envoie « Hello » → une réponse doit arriver.
-5. **Page Fusion** (recommandé) : choisis 3 modèles solides de fournisseurs différents pour le panel et un bon modèle comme juge.
+1. Crée le compte admin avec le *setup code*.
+2. Page **Keys** : colle chaque clé fournisseur.
+3. Copie la **clé unifiée** `freellmapi-…` (en haut de la page Keys).
+4. **Playground** : teste `auto:smart`.
+5. **Fusion** : choisis 3 modèles de fournisseurs différents + un juge.
 
 ---
 
 ## 4. Cloudflare Workers AI (images)
 
-1. Crée un compte gratuit sur dash.cloudflare.com (pas de carte bancaire nécessaire).
-2. Menu **AI → Workers AI** → **Use REST API**.
-3. Copie l'**Account ID** → `CF_ACCOUNT_ID`.
-4. Clique **Create a Workers AI API Token** → copie le jeton (affiché une seule fois) → `CF_API_TOKEN`.
-
-Quota gratuit : 10 000 « neurons »/jour, soit environ une vidéo. Au-delà, les images basculent automatiquement sur FreeLLMAPI.
+dash.cloudflare.com → **AI → Workers AI → Use REST API** : copie l'**Account ID**, puis **Create a Workers AI API Token** (affiché une seule fois). Gratuit, sans carte bancaire.
 
 ---
 
-## 5. Installer le pipeline
+## 5. Remplir `.env`
 
 ```bash
-sudo git clone https://github.com/aymenkssi/dailyshorts.git /opt/daily_shorts
-sudo chown -R $USER:$USER /opt/daily_shorts
-cd /opt/daily_shorts
-python3 -m venv .venv
-.venv/bin/pip install --upgrade pip
-.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu   # version CPU (~200 Mo au lieu de ~2 Go)
-.venv/bin/pip install -r requirements.txt
+nano /opt/dailyshorts/.env
 ```
-
----
-
-## 6. Remplir la configuration
-
-```bash
-cp .env.example .env && chmod 600 .env && nano .env
-```
-
-Pour l'instant, renseigne seulement :
 
 | Variable | Valeur |
 |---|---|
-| `LLM_API_KEY` | clé unifiée `freellmapi-…` (étape 3c) |
+| `SHORTS_DOMAIN` | `aymendridi.com` |
+| `LLM_API_KEY` | clé unifiée de l'étape 3b |
 | `CF_ACCOUNT_ID`, `CF_API_TOKEN` | étape 4 |
-| `KOKORO_VOICE` | `am_michael` par défaut ; essaie aussi `bm_george` (voix britannique) |
-| `PUBLISH_YOUTUBE`, `PUBLISH_INSTAGRAM`, `PUBLISH_TIKTOK` | `false` pour le moment |
+| `RUN_AT` | `16:47` (heure de Paris) |
+| `PUBLISH_*` | `false` pour l'instant |
 
-Laisse les autres valeurs par défaut.
+`LLM_BASE_URL` et `PUBLIC_VIDEO_DIR` sont fixés par `docker-compose.yml`, ne les ajoute pas.
 
 ---
 
-## 7. Tester et générer une première vidéo
+## 6. Construire et démarrer la pile
 
 ```bash
-cd /opt/daily_shorts
-.venv/bin/python tools/check_services.py
+cd /opt/dailyshorts
+docker compose up -d --build        # 1er build : 5 à 15 min (torch, Kokoro)
+docker compose ps                   # 3 conteneurs "running"
+docker compose logs -f shorts       # "planificateur démarré … prochaine vidéo : …" — Ctrl+C pour quitter
 ```
 
-Chaque ligne doit afficher `[OK]` (le test `fusion` peut prendre 1 à 2 minutes). Ensuite :
+Vérifier que la route Traefik répond :
 
 ```bash
-.venv/bin/python main.py --no-publish
+echo test | sudo tee public/test.mp4 >/dev/null
+curl -I https://aymendridi.com/shorts/test.mp4    # 200 + Content-Type: video/mp4
+sudo rm public/test.mp4
 ```
 
-Durée : 10 à 20 minutes. Le premier lancement télécharge en plus le modèle de voix Kokoro (~330 Mo). À la fin s'affiche le chemin `output/<date>/final.mp4`.
+---
 
-**(PC)** Récupère la vidéo pour la regarder :
+## 7. Tester sans publier
 
 ```bash
-scp user@IP_VPS:/opt/daily_shorts/output/<date>/final.mp4 .
+docker compose exec shorts python tools/check_services.py     # toutes les lignes [OK]
+docker compose exec shorts python main.py --no-publish        # 10 à 20 min
 ```
 
-À vérifier : la voix est synchronisée avec les sous-titres, les images correspondent au texte, les faits sont corrects (le texte complet est dans `output/<date>/script.json`). Pour retenter le même jour depuis zéro : `rm -rf output/<date>` puis relance.
+Le premier passage télécharge le modèle de voix (~330 Mo, gardé dans le volume `kokoro_cache`).
+
+**(PC)** Récupère la vidéo :
+
+```bash
+scp user@IP_VPS:/opt/dailyshorts/output/<date>/final.mp4 .
+```
+
+Vérifie la synchronisation voix/sous-titres, les images et les faits (`output/<date>/script.json`). Pour refaire le même jour : `sudo rm -rf output/<date>`.
 
 ---
 
 ## 8. YouTube
 
-### 8a. Projet Google Cloud (navigateur)
+**Navigateur** — console.cloud.google.com :
 
-1. console.cloud.google.com → **Nouveau projet** (ex. « dailyshorts »).
-2. **API et services → Bibliothèque** → recherche *YouTube Data API v3* → **Activer**.
-3. **Google Auth Platform** (écran de consentement OAuth) → **Commencer** : nom de l'appli, ton e-mail d'assistance, audience **Externe**, coordonnées → **Créer**.
-4. **Accès aux données** → **Ajouter des champs d'application** → coche `.../auth/youtube.upload` → **Enregistrer**.
-5. **Audience** → **Publier l'application** (statut « En production »). Indispensable : en mode « Test », le jeton expire tous les 7 jours. Pas besoin de faire valider l'appli pour ton propre usage.
-6. **Clients** → **Créer un client** → type **Application de bureau** → **Créer** → **Télécharger le JSON**.
+1. **Nouveau projet** → **API et services → Bibliothèque** → *YouTube Data API v3* → **Activer**.
+2. **Google Auth Platform → Commencer** : nom, e-mail, audience **Externe**.
+3. **Accès aux données → Ajouter des champs d'application** → `.../auth/youtube.upload`.
+4. **Audience → Publier l'application** (« En production » ; sinon le jeton expire tous les 7 jours).
+5. **Clients → Créer un client → Application de bureau** → **Télécharger le JSON**.
 
-### 8b. Autoriser la chaîne (PC, une seule fois)
-
-Il faut Python sur ton PC.
+**(PC)** — une seule fois, il faut Python :
 
 ```bash
 git clone https://github.com/aymenkssi/dailyshorts.git && cd dailyshorts
@@ -196,157 +175,101 @@ python -m pip install google-auth-oauthlib
 python tools/youtube_auth.py CHEMIN/VERS/client_secret_xxx.json
 ```
 
-Le navigateur s'ouvre : choisis le compte **de la chaîne**, puis « Google n'a pas validé cette application » → **Paramètres avancés** → **Accéder à … (non sécurisé)** → **Continuer**. Le fichier `state/youtube_token.json` est créé.
-
-Envoie-le sur le VPS :
+Choisis le compte **de la chaîne** → « Google n'a pas validé cette application » → **Paramètres avancés → Accéder à … → Continuer**. Puis :
 
 ```bash
-scp state/youtube_token.json user@IP_VPS:/opt/daily_shorts/state/
+scp state/youtube_token.json user@IP_VPS:/tmp/
 ```
 
-Puis sur le VPS : `chmod 600 /opt/daily_shorts/state/youtube_token.json`.
+**VPS** :
+
+```bash
+sudo install -o 1000 -g 1000 -m 600 /tmp/youtube_token.json /opt/dailyshorts/state/ && rm /tmp/youtube_token.json
+```
 
 ---
 
 ## 9. Instagram
 
-### 9a. Rendre les vidéos téléchargeables par Instagram (nginx)
+1. Appli Instagram : **Paramètres → Type de compte et outils** → compte **professionnel**, compte **public**.
+2. developers.facebook.com → **Créer une application** → cas d'utilisation **Autre** → type **Entreprise**.
+3. Produit **Instagram → Configurer** → **Générer des jetons d'accès → Ajouter un compte** → connecte ton compte, accepte la publication de contenu → **Générer un jeton**.
+4. Identifiant du compte :
 
-Instagram récupère la vidéo depuis une URL publique de ton site.
+   ```bash
+   curl -s "https://graph.instagram.com/v23.0/me?fields=user_id,username&access_token=TON_JETON"
+   ```
 
-```bash
-sudo mkdir -p /var/www/aymendridi.com/shorts
-sudo chown $USER:$USER /var/www/aymendridi.com/shorts
-sudo nano /etc/nginx/sites-available/aymendridi.com     # adapte au nom de ton fichier
-```
+5. Dans `.env` : `IG_ACCESS_TOKEN`, `IG_USER_ID` (= `user_id`), `PUBLIC_VIDEO_BASE_URL=https://aymendridi.com/shorts`.
 
-Dans le bloc `server { ... }` **HTTPS** (celui avec `listen 443`), ajoute :
-
-```nginx
-location /shorts/ {
-    alias /var/www/aymendridi.com/shorts/;
-    types { video/mp4 mp4; }
-    autoindex off;
-}
-```
-
-```bash
-sudo nginx -t && sudo systemctl reload nginx
-cp /opt/daily_shorts/output/<date>/final.mp4 /var/www/aymendridi.com/shorts/test.mp4
-curl -I https://aymendridi.com/shorts/test.mp4     # doit répondre 200 et Content-Type: video/mp4
-rm /var/www/aymendridi.com/shorts/test.mp4
-```
-
-### 9b. Compte et appli Meta (navigateur)
-
-1. Dans l'appli Instagram : **Paramètres → Type de compte et outils** → passe en **compte professionnel** (Créateur ou Entreprise). Le compte doit être **public**.
-2. developers.facebook.com → **Mes applications → Créer une application** → cas d'utilisation **Autre** → type **Entreprise** → nom + e-mail → **Créer**.
-3. Dans l'appli, produit **Instagram** → **Configurer** (« API setup with Instagram login » s'ajoute).
-4. Section **Générer des jetons d'accès** → **Ajouter un compte** → connecte-toi avec ton compte Instagram → accepte les permissions (dont la publication de contenu).
-5. Clique **Générer un jeton** pour ce compte → copie-le → `IG_ACCESS_TOKEN` dans `.env`.
-
-Récupère l'identifiant du compte (sur le VPS) :
-
-```bash
-curl -s "https://graph.instagram.com/v23.0/me?fields=user_id,username&access_token=TON_JETON"
-```
-
-Mets la valeur de `user_id` dans `IG_USER_ID`. Le pipeline rafraîchit le jeton chaque semaine, il n'expirera pas tant que le pipeline tourne.
-
-> L'appli peut rester en mode développement pour publier sur ton propre compte. Si Meta refuse la publication en invoquant l'*App Review*, il faudra soumettre la permission `instagram_business_content_publish` à la vérification.
+Le pipeline rafraîchit le jeton chaque semaine. Si Meta exige l'*App Review* pour publier, soumets la permission `instagram_business_content_publish`.
 
 ---
 
 ## 10. TikTok
 
-### 10a. Créer l'appli (navigateur)
+**Navigateur** — developers.tiktok.com → **Manage apps → Connect an app** :
 
-1. developers.tiktok.com → crée un compte développeur → **Manage apps → Connect an app**.
-2. Remplis : icône, nom, catégorie, description ; plateforme **Web** avec l'URL `https://aymendridi.com`. Pour la soumission à l'audit, TikTok demande aussi une page de conditions d'utilisation et une page de confidentialité : publie deux pages simples sur aymendridi.com.
-3. **Add products** :
-   - **Login Kit** → Redirect URI : `https://aymendridi.com/tiktok-callback` (la page n'a pas besoin d'exister).
-   - **Content Posting API** → active **Direct Post**.
-4. **Scopes** : `user.info.basic` et `video.publish`.
-5. Copie **Client key** et **Client secret** → `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` dans `.env`.
-6. Si l'appli est en mode **Sandbox**, ajoute ton compte TikTok dans les utilisateurs de test du sandbox.
-7. **Submit for review** pour l'audit *Content Posting API* : sans audit, TikTok n'accepte que des publications **privées** et seulement depuis un **compte privé**.
+1. Icône, nom, catégorie, description ; plateforme **Web** : `https://aymendridi.com`. Pour l'audit, prévois une page de conditions d'utilisation et une page de confidentialité sur ton site.
+2. **Login Kit** → Redirect URI `https://aymendridi.com/tiktok-callback` (la page n'a pas besoin d'exister).
+3. **Content Posting API** → active **Direct Post**.
+4. Scopes : `user.info.basic`, `video.publish`.
+5. **Client key / Client secret** → `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` dans `.env`, puis `docker compose up -d shorts`.
+6. En mode **Sandbox**, ajoute ton compte TikTok aux utilisateurs de test.
+7. **Submit for review** : sans audit, publications **privées** uniquement, depuis un **compte privé**.
 
-### 10b. Autoriser ton compte (VPS)
+**VPS** — autoriser ton compte :
 
 ```bash
-cd /opt/daily_shorts
-.venv/bin/python tools/tiktok_auth.py
+docker compose run --rm shorts python tools/tiktok_auth.py
 ```
 
-1. Ouvre l'URL affichée sur ton PC, connecte-toi à TikTok, autorise.
-2. Tu arrives sur `https://aymendridi.com/tiktok-callback?code=…` (page d'erreur normale).
-3. Copie **l'URL complète** de la barre d'adresse et colle-la dans le terminal **rapidement** (le code expire en quelques minutes).
-
-`state/tiktok_token.json` est créé ; le pipeline le renouvelle tout seul.
-
-> Avant la fin de l'audit : passe ton compte TikTok en privé, ou laisse `PUBLISH_TIKTOK=false`.
+Ouvre l'URL affichée, autorise, puis colle **vite** l'URL complète de la page `tiktok-callback?code=…` (le code expire en quelques minutes).
 
 ---
 
-## 11. Première publication réelle
+## 11. Activer la publication
 
-Dans `.env`, active les plateformes prêtes (`PUBLISH_YOUTUBE=true`…). Garde `YOUTUBE_PRIVACY=private` pour commencer.
-
-```bash
-cd /opt/daily_shorts
-.venv/bin/python main.py
-cat output/$(date +%F)/published.json
-```
-
-Chaque plateforme doit afficher `OK …`. En cas d'erreur sur l'une, corrige puis relance la même commande : la vidéo n'est pas regénérée et les plateformes déjà publiées sont sautées.
-
----
-
-## 12. Automatisation quotidienne (timer systemd)
-
-On utilise systemd plutôt que cron : le cron d'Ubuntu ne gère pas de fuseau horaire par tâche, alors que le timer se cale sur **16 h 47 heure de Paris** (heure d'été comprise) et rattrape un passage manqué si le VPS était éteint.
+Dans `.env` : `PUBLISH_YOUTUBE=true` (et les autres quand ils sont prêts), puis :
 
 ```bash
-cd /opt/daily_shorts
-sed "s/CHANGE_ME/$USER/" deploy/dailyshorts.service | sudo tee /etc/systemd/system/dailyshorts.service >/dev/null
-sudo cp deploy/dailyshorts.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now dailyshorts.timer
-systemctl list-timers dailyshorts.timer      # affiche la prochaine exécution
+docker compose up -d shorts                               # recharge le .env
+docker compose exec shorts python main.py                 # premier passage réel
+cat output/$(TZ=Europe/Paris date +%F)/published.json     # "OK …" par plateforme
 ```
 
-Lancer un passage tout de suite (test) : `sudo systemctl start dailyshorts.service`, puis suis-le avec `journalctl -u dailyshorts -f`.
+En cas d'erreur sur une plateforme : corrige et relance la même commande (la vidéo n'est pas regénérée, les plateformes réussies sont sautées).
 
-Le service fait aussi le ménage : dossiers de travail de plus de 30 jours, vidéos publiques de plus de 7 jours.
+À partir de là, le conteneur publie **seul chaque jour à `RUN_AT`**. Il rattrape la vidéo du jour s'il redémarre après l'heure prévue, réessaie deux fois en cas d'échec (toutes les 30 min), supprime les dossiers de travail de plus de 30 jours et les vidéos publiques de plus de 7 jours.
 
-Après quelques jours de relecture : `YOUTUBE_PRIVACY=public` dans `.env` (pris en compte au prochain passage).
+Après quelques jours de relecture : `YOUTUBE_PRIVACY=public`, puis `docker compose up -d shorts`.
 
 ---
 
 ## Entretien
 
-| Action | Commande |
+| Action | Commande (dans `/opt/dailyshorts`) |
 |---|---|
-| Voir le dernier passage | `journalctl -u dailyshorts -n 100` |
-| Prochain passage prévu | `systemctl list-timers dailyshorts.timer` |
-| Relancer un jour raté | `cd /opt/daily_shorts && .venv/bin/python main.py --date AAAA-MM-JJ` |
-| Changer l'heure | modifier `OnCalendar` dans `/etc/systemd/system/dailyshorts.timer`, puis `sudo systemctl daemon-reload` |
-| Mettre en pause | `sudo systemctl disable --now dailyshorts.timer` |
-| Mettre à jour le pipeline | `cd /opt/daily_shorts && git pull && .venv/bin/pip install -r requirements.txt` |
-| Mettre à jour FreeLLMAPI | `cd /opt/freellmapi && sudo docker compose pull && sudo docker compose up -d` |
-| Sauvegarder | `/opt/daily_shorts/.env`, `/opt/daily_shorts/state/`, `ENCRYPTION_KEY` de FreeLLMAPI |
+| Suivre le pipeline | `docker compose logs -f shorts` |
+| État des conteneurs | `docker compose ps` |
+| Relancer un jour | `docker compose exec shorts python main.py --date AAAA-MM-JJ` |
+| Changer l'heure | `RUN_AT` dans `.env`, puis `docker compose up -d shorts` |
+| Mettre en pause | `docker compose stop shorts` |
+| Mettre à jour le pipeline | `git pull && docker compose up -d --build shorts` |
+| Mettre à jour FreeLLMAPI | `docker compose pull freellmapi && docker compose up -d freellmapi` |
+| Sauvegarder | `.env`, `freellmapi.env`, `state/`, et le volume FreeLLMAPI : `docker run --rm -v dailyshorts_freellmapi_data:/d -v $PWD:/b alpine tar czf /b/freellmapi-data.tgz -C /d .` |
 
 ## Dépannage
 
 | Symptôme | Cause probable | Solution |
 |---|---|---|
-| `check_services` : FreeLLMAPI KO, *Connection refused* | conteneur arrêté | `cd /opt/freellmapi && sudo docker compose up -d` |
-| FreeLLMAPI : erreur 401 | mauvaise clé | recopier la clé unifiée dans `LLM_API_KEY` |
-| « texte généré via cloudflare » au lieu de freellmapi | FreeLLMAPI indisponible ou tous ses modèles saturés | vérifier la page Keys / Analytics du tableau de bord ; ajouter des fournisseurs |
-| Cloudflare 429 | quota du jour atteint | rien à faire : bascule automatique sur FreeLLMAPI |
-| `pip install` de kokoro échoue | Python 3.13 | recréer le `.venv` avec Python 3.12 |
-| Processus tué pendant la voix ou l'installation | manque de RAM | ajouter le swap (étape 1) |
-| YouTube `invalid_grant` | jeton révoqué ou écran de consentement resté en « Test » | passer en production (8a.5) et refaire 8b |
-| Instagram `ERROR` au traitement | URL non publique ou fichier absent | refaire le test `curl -I` de l'étape 9a |
-| TikTok `unaudited_client_can_only_post_to_private_accounts` | appli pas encore auditée | compte TikTok en privé ou `PUBLISH_TIKTOK=false` |
-| Disque plein | vidéos et images accumulées | `du -sh /opt/daily_shorts/output` ; le service nettoie au-delà de 30 jours |
+| `network web declared as external, but could not be found` | réseau Traefik absent ou nommé autrement | `docker network ls` ; adapter le nom dans `docker-compose.yml` |
+| `curl` sur `/shorts/` renvoie 404 Traefik | route non prise | `docker compose logs media` ; vérifier `SHORTS_DOMAIN` et l'entrée `websecure` de ton Traefik |
+| `Permission denied` sur `state/` ou `output/` | dossiers pas à l'UID 1000 | `sudo chown -R 1000:1000 state output public` |
+| FreeLLMAPI KO dans `check_services` | conteneur pas « healthy » | `docker compose logs freellmapi` |
+| FreeLLMAPI 401 | mauvaise clé | recopier la clé unifiée dans `LLM_API_KEY`, `docker compose up -d shorts` |
+| « texte généré via cloudflare » | modèles FreeLLMAPI saturés ou indisponibles | ajouter des fournisseurs dans la page Keys |
+| Build ou voix tués (`Killed`) | manque de RAM | swap (étape 1) |
+| YouTube `invalid_grant` | jeton révoqué ou appli restée en « Test » | étape 8.4 puis refaire l'autorisation |
+| Instagram `ERROR` | URL vidéo injoignable | refaire le test `curl -I` de l'étape 6 |
+| TikTok `unaudited_client_can_only_post_to_private_accounts` | audit non validé | compte TikTok en privé ou `PUBLISH_TIKTOK=false` |
