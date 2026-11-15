@@ -1,0 +1,20 @@
+[Unit]
+Description=Daily Shorts - génération et publication de la vidéo du jour
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=CHANGE_ME
+WorkingDirectory=/opt/daily_shorts
+# Ménage avant chaque passage (le "-" ignore les erreurs) :
+#  - dossiers de travail de plus de 30 jours (images, clips)
+#  - vidéos publiques servies à Instagram de plus de 7 jours
+ExecStartPre=-/usr/bin/find /opt/daily_shorts/output -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} +
+ExecStartPre=-/usr/bin/find /var/www/aymendridi.com/shorts -name "*.mp4" -mtime +7 -delete
+ExecStart=/opt/daily_shorts/.venv/bin/python main.py
+TimeoutStartSec=2h
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

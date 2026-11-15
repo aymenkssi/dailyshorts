@@ -1,0 +1,10 @@
+[Unit]
+Description=Lance Daily Shorts chaque jour à 16h47 (heure de Paris)
+
+[Timer]
+OnCalendar=*-*-* 16:47:00 Europe/Paris
+# Rattrape le passage manqué si le VPS était éteint à l'heure prévue
+Persistent=true
+
+[Install]
+WantedBy=timers.target
