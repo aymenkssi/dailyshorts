@@ -7,6 +7,7 @@ Usage :
 """
 import argparse
 import datetime as dt
+import fcntl
 import json
 import os
 import sys
@@ -70,6 +71,14 @@ def main():
 
     out = ROOT / "output" / args.date
     out.mkdir(parents=True, exist_ok=True)
+    # un seul passage à la fois pour une même journée (planificateur et commande manuelle)
+    lock = open(out / ".lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print(f"Un autre passage est déjà en cours pour le {args.date} : attends qu'il se termine "
+              "(suivi : docker compose logs -f shorts).")
+        sys.exit(3)
     history = json.loads(HISTORY.read_text()) if HISTORY.exists() else []
 
     # 1. Scripts : vidéo longue (écrite puis vérifiée), puis Short d'accroche tiré de la même histoire

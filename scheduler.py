@@ -84,6 +84,9 @@ def run_step(day, label, extra_args):
             for line in proc.stdout:
                 emit(line.rstrip("\n"))
             code = proc.wait()
+            while code == 3:  # une commande manuelle traite déjà cette journée : on attend, sans compter d'essai
+                time.sleep(120)
+                code = subprocess.call([sys.executable, str(ROOT / "main.py"), "--date", day, *extra_args], cwd=ROOT)
             if code == 0:
                 log(f"{label} du {day} : terminé")
                 return True

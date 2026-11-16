@@ -16,21 +16,33 @@ def caption_text(meta, limit=2200):
     return f"{meta['title']}\n\n{meta['description']}\n\n{tags}"[:limit]
 
 
+def _duration(path):
+    """Durée en secondes, ou None si le fichier est illisible (incomplet, corrompu)."""
+    try:
+        return float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                              "-of", "csv=p=0", str(path)], stderr=subprocess.DEVNULL))
+    except (subprocess.CalledProcessError, ValueError):
+        return None
+
+
 def light_copy(video, max_mb=60):
     """Copie allégée pour Instagram (100 Mo max) et TikTok (envoi en un bloc, 64 Mo max).
     Renvoie la vidéo d'origine si elle est déjà assez légère."""
     video = Path(video)
-    if video.stat().st_size <= max_mb * 1024 * 1024:
+    limit = max_mb * 1024 * 1024
+    if video.stat().st_size <= limit:
         return video
     out = video.with_name("final_social.mp4")
-    if out.exists() and out.stat().st_size <= max_mb * 1024 * 1024:
+    dur = _duration(video)
+    # copie déjà faite : on ne la réutilise que si elle est complète et lisible
+    if out.exists() and out.stat().st_size <= limit and abs((_duration(out) or 0) - dur) < 2:
         return out
-    dur = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                                         "-of", "csv=p=0", str(video)]))
     kbps = int(max_mb * 8 * 1024 * 0.92 / dur) - 128      # marge de 8 %, moins la piste audio
+    tmp = out.with_name("final_social.tmp.mp4")           # écrit à part, renommé seulement une fois complet
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(video), "-c:v", "libx264", "-preset", "veryfast",
                     "-b:v", f"{kbps}k", "-maxrate", f"{kbps}k", "-bufsize", f"{2 * kbps}k", "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(out)], check=True)
+                    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(tmp)], check=True)
+    os.replace(tmp, out)
     return out
 
 
@@ -112,12 +124,13 @@ def publish_instagram(video, meta, date, suffix=""):
     # 2) attendre le traitement côté Meta
     for _ in range(30):
         time.sleep(30)
-        st = requests.get(f"{base}/{container}", params={"fields": "status_code", "access_token": token},
-                          timeout=60).json().get("status_code")
+        info = requests.get(f"{base}/{container}", params={"fields": "status_code,status", "access_token": token},
+                            timeout=60).json()
+        st = info.get("status_code")
         if st == "FINISHED":
             break
         if st in ("ERROR", "EXPIRED"):
-            raise RuntimeError(f"Instagram : traitement {st}")
+            raise RuntimeError(f"Instagram : traitement {st} — {info.get('status', 'sans détail')}")
     else:
         raise RuntimeError("Instagram : délai de traitement dépassé")
     # 3) publier
@@ -156,8 +169,7 @@ def publish_tiktok(video, meta):
 
     video = light_copy(video)
     max_s = info.get("max_video_post_duration_sec")
-    dur = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                                         "-of", "csv=p=0", str(video)]))
+    dur = _duration(video) or 0
     if max_s and dur > max_s:
         raise RuntimeError(f"TikTok : vidéo de {dur:.0f} s, mais ce compte est limité à {max_s} s")
     size = Path(video).stat().st_size
