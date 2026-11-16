@@ -90,15 +90,22 @@ def main():
             store.pop_topic()  # retiré de la file seulement une fois le script écrit
     print(f"Sujet : {scripts['long']['topic']}")
 
-    # 2. Production des deux vidéos
-    finals = {kind: produce(kind, scripts[kind], out / kind) for kind in ("long", "short")}
+    # 2. Production des deux vidéos ; l'échec de l'une n'empêche pas l'autre
+    finals, missing = {}, []
+    for kind in ("long", "short"):
+        try:
+            finals[kind] = produce(kind, scripts[kind], out / kind)
+        except Exception as e:  # noqa: BLE001
+            missing.append(kind)
+            print(f"[{kind}] ÉCHEC : {e}")
+            traceback.print_exc()
 
-    if not any(h["date"] == args.date for h in history):
+    if "long" in finals and not any(h["date"] == args.date for h in history):
         history.append({"date": args.date, "topic": scripts["long"]["topic"], "title": scripts["long"]["title"]})
         HISTORY.write_text(json.dumps(history, indent=1, ensure_ascii=False))
 
     if args.no_publish:
-        return
+        sys.exit(1 if missing else 0)  # code 1 : le planificateur réessaiera ce qui manque
 
     # 3. Publication (chaque cible indépendante ; déjà publié = sauté)
     results_file = out / "published.json"
@@ -110,17 +117,19 @@ def main():
         return f"▶ Full story: {r[3:]}" if r.startswith("OK ") else ""
 
     yt = on("PUBLISH_YOUTUBE")
-    targets = [
-        ("youtube_long", yt, lambda: platforms.publish_youtube(finals["long"], scripts["long"], short=False)),
-        ("youtube_short", yt, lambda: platforms.publish_youtube(finals["short"], scripts["short"], short=True,
-                                                                 extra=long_link())),
-        ("instagram", on("PUBLISH_INSTAGRAM"),
+    targets = [  # (nom, activé, vidéo nécessaire, action)
+        ("youtube_long", yt, "long",
+         lambda: platforms.publish_youtube(finals["long"], scripts["long"], short=False)),
+        ("youtube_short", yt, "short",
+         lambda: platforms.publish_youtube(finals["short"], scripts["short"], short=True, extra=long_link())),
+        ("instagram", on("PUBLISH_INSTAGRAM"), "short",
          lambda: platforms.publish_instagram(finals["short"], scripts["short"], args.date)),
-        ("tiktok", on("PUBLISH_TIKTOK"), lambda: platforms.publish_tiktok(finals["short"], scripts["short"])),
+        ("tiktok", on("PUBLISH_TIKTOK"), "short",
+         lambda: platforms.publish_tiktok(finals["short"], scripts["short"])),
     ]
-    failed = False
-    for name, enabled, fn in targets:
-        if not enabled or str(results.get(name, "")).startswith("OK"):
+    failed = bool(missing)  # une vidéo manquante = journée incomplète, on publie quand même ce qui existe
+    for name, enabled, kind, fn in targets:
+        if not enabled or kind not in finals or str(results.get(name, "")).startswith("OK"):
             continue
         try:
             results[name] = "OK " + fn()
