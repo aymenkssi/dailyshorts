@@ -17,7 +17,7 @@ Coût : 0 €. Le quota gratuit Cloudflare (10 000 « neurons »/jour) couvre le
 
 ## Déploiement
 
-Docker Compose derrière Traefik, comme Waselni : `freellmapi` (local uniquement), `shorts` (planificateur interne : une vidéo par jour à `RUN_AT`, heure de Paris) et `media` (sert `/shorts/*.mp4` pour Instagram).
+Docker Compose derrière Traefik, comme Waselni : `freellmapi` (local uniquement), `shorts` (planificateur interne : création à `GENERATE_AT`, publication à `PUBLISH_AT`, heure de Paris) et `media` (sert `/shorts/*.mp4` pour Instagram).
 
 ## Commandes
 

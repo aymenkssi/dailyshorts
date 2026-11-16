@@ -5,7 +5,7 @@ Daily Shorts se déploie comme Waselni : une pile **Docker Compose** derrière l
 | Conteneur | Rôle | Exposition |
 |---|---|---|
 | `dailyshorts-freellmapi` | routeur de LLM gratuits | `127.0.0.1:3001` seulement (tunnel SSH) |
-| `dailyshorts-pipeline` | génère et publie chaque jour à 16 h 47 une vidéo longue (4 min) et un Short d'accroche (heure de Paris) | aucune |
+| `dailyshorts-pipeline` | crée chaque nuit à 1 h une vidéo longue (4 min) et un Short d'accroche, puis les publie à 16 h 47 (heure de Paris) (heure de Paris) | aucune |
 | `dailyshorts-media` | sert `https://aymendridi.com/shorts/*.mp4` pour Instagram | via Traefik |
 
 Les commandes se lancent sur le VPS, sauf les blocs marqués **(PC)**. `user@IP_VPS` = ton accès SSH.
@@ -112,7 +112,8 @@ nano /opt/dailyshorts/.env
 | `SHORTS_DOMAIN` | `aymendridi.com` |
 | `LLM_API_KEY` | clé unifiée de l'étape 3b |
 | `CF_ACCOUNT_ID`, `CF_API_TOKEN` | étape 4 |
-| `RUN_AT` | `16:47` (heure de Paris) |
+| `GENERATE_AT` | `01:00` : création des vidéos (heure de Paris) |
+| `PUBLISH_AT` | `16:47` : publication le même jour |
 | `PUBLISH_*` | `false` pour l'instant |
 
 `LLM_BASE_URL` et `PUBLIC_VIDEO_DIR` sont fixés par `docker-compose.yml`, ne les ajoute pas.
@@ -241,7 +242,7 @@ cat output/$(TZ=Europe/Paris date +%F)/published.json     # youtube_long, youtub
 
 En cas d'erreur sur une plateforme : corrige et relance la même commande (la vidéo n'est pas regénérée, les plateformes réussies sont sautées).
 
-À partir de là, le conteneur publie **seul chaque jour à `RUN_AT`**. Il rattrape la vidéo du jour s'il redémarre après l'heure prévue, réessaie deux fois en cas d'échec (toutes les 30 min), supprime les dossiers de travail de plus de 30 jours et les vidéos publiques de plus de 7 jours.
+À partir de là, le conteneur crée les vidéos **chaque nuit à `GENERATE_AT`** et les publie **à `PUBLISH_AT`**. Il rattrape une étape manquée s'il redémarre après l'heure prévue, réessaie deux fois en cas d'échec (toutes les 30 min), supprime les dossiers de travail de plus de 30 jours et les vidéos publiques de plus de 7 jours.
 
 Après quelques jours de relecture : `YOUTUBE_PRIVACY=public`, puis `docker compose up -d shorts`.
 
@@ -254,7 +255,7 @@ Après quelques jours de relecture : `YOUTUBE_PRIVACY=public`, puis `docker comp
 | Suivre le pipeline | `docker compose logs -f shorts` |
 | État des conteneurs | `docker compose ps` |
 | Relancer un jour | `docker compose exec shorts python main.py --date AAAA-MM-JJ` |
-| Changer l'heure | `RUN_AT` dans `.env`, puis `docker compose up -d shorts` |
+| Changer les heures | `GENERATE_AT` / `PUBLISH_AT` dans `.env`, puis `docker compose up -d shorts` |
 | Mettre en pause | `docker compose stop shorts` |
 | Mettre à jour le pipeline | `git pull && docker compose up -d --build shorts` |
 | Mettre à jour FreeLLMAPI | `docker compose pull freellmapi && docker compose up -d freellmapi` |
