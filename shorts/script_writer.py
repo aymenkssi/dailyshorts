@@ -74,12 +74,20 @@ def _parse(text):
     return data
 
 
-def _call(system, user, purpose="write", tries=2, max_tokens=8000):
+def _word_count(script):
+    return sum(len(sc["narration"].split()) for sc in script["scenes"])
+
+
+def _call(system, user, purpose="write", tries=2, max_tokens=8000, min_words=0):
+    """min_words : longueur minimale de la narration ; un script trop court est refusé et redemandé."""
     err = None
     for ep in _endpoints(purpose):
         for _ in range(tries):
             try:
-                return _parse(_chat(ep, system, user, max_tokens=max_tokens))
+                data = _parse(_chat(ep, system, user, max_tokens=max_tokens))
+                if _word_count(data) < min_words:
+                    raise ValueError(f"script trop court : {_word_count(data)} mots au lieu de {min_words} minimum")
+                return data
             except Exception as e:  # noqa: BLE001  -> erreur ou JSON invalide : on réessaie puis on passe au suivant
                 err = e
                 print(f"  {ep[0]}/{ep[3]} : échec ({str(e)[:200]})")
@@ -100,7 +108,8 @@ def write_long(past_topics, seconds=240):
     user = f"""Write today's long-form video (horizontal, about {seconds // 60} minutes) in English.
 
 Constraints:
-- Total narration: about {words} words (~{seconds} s spoken).
+- Total narration: about {words} words (~{seconds} s spoken). This length is mandatory: a script under
+  {int(words * 0.75)} words will be rejected. Count your words before answering.
 - Structure: a hook in the first 10 seconds, the setting and the people, the story told step by step
   with concrete details, a turning point, what it changed, and a memorable closing line
   (no "like and subscribe").
@@ -110,7 +119,7 @@ Constraints:
 - Topic must be different from these already published topics: {json.dumps(past_topics[-300:])}
 
 {SCHEMA_HINT}"""
-    return _call(WRITER, user, max_tokens=14000)
+    return _call(WRITER, user, max_tokens=14000, min_words=int(words * 0.75))
 
 
 def write_teaser(long_script, seconds=40):
@@ -134,7 +143,7 @@ Constraints:
 - image_prompt: concrete subject, setting, action, vertical framing.
 
 {SCHEMA_HINT}"""
-    teaser = _call(WRITER, user)
+    teaser = _call(WRITER, user, min_words=int(words * 0.6))
     teaser["topic"] = long_script["topic"]
     return teaser
 
@@ -147,7 +156,8 @@ def fact_check(script):
         "style, length and all other fields. " + SCHEMA_HINT
     )
     try:
-        checked = _call(system, json.dumps(script, ensure_ascii=False), purpose="check", max_tokens=14000)
+        checked = _call(system, json.dumps(script, ensure_ascii=False), purpose="check", max_tokens=14000,
+                        min_words=int(_word_count(script) * 0.85))
         n = len(script["scenes"])
         if abs(len(checked["scenes"]) - n) > max(2, n // 10):
             raise RuntimeError("le vérificateur a trop modifié la structure")
