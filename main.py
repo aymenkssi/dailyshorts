@@ -128,6 +128,11 @@ def main():
          lambda: platforms.publish_instagram(finals["short"], scripts["short"], args.date)),
         ("tiktok", on("PUBLISH_TIKTOK"), "short",
          lambda: platforms.publish_tiktok(finals["short"], scripts["short"])),
+        # option : la vidéo longue aussi sur Instagram et TikTok
+        ("instagram_long", on("PUBLISH_INSTAGRAM") and on("LONG_TO_SOCIAL"), "long",
+         lambda: platforms.publish_instagram(finals["long"], scripts["long"], args.date, suffix="-long")),
+        ("tiktok_long", on("PUBLISH_TIKTOK") and on("LONG_TO_SOCIAL"), "long",
+         lambda: platforms.publish_tiktok(finals["long"], scripts["long"])),
     ]
     failed = bool(missing)  # une vidéo manquante = journée incomplète, on publie quand même ce qui existe
     for name, enabled, kind, fn in targets:

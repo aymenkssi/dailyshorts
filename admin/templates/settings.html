@@ -17,6 +17,8 @@
   <label class="check"><input type="checkbox" name="publish_youtube" {{ 'checked' if s.publish_youtube }}> YouTube (vidéo longue + Short)</label>
   <label class="check"><input type="checkbox" name="publish_instagram" {{ 'checked' if s.publish_instagram }}> Instagram (Short)</label>
   <label class="check"><input type="checkbox" name="publish_tiktok" {{ 'checked' if s.publish_tiktok }}> TikTok (Short)</label>
+  <label class="check"><input type="checkbox" name="long_to_social" {{ 'checked' if s.long_to_social }}> Publier aussi la vidéo longue sur Instagram et TikTok</label>
+  <p class="hint">Elle est horizontale : ces applis l'affichent avec des bandes noires. Sur Instagram, elle part comme vidéo classique, hors de l'onglet Reels.</p>
   <label for="yp">Visibilité sur YouTube</label>
   <select id="yp" name="youtube_privacy">
     {% for v, l in (('private', 'Privée'), ('unlisted', 'Non répertoriée'), ('public', 'Publique')) %}<option value="{{ v }}" {{ 'selected' if s.youtube_privacy == v }}>{{ l }}</option>{% endfor %}

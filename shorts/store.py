@@ -27,6 +27,7 @@ SCHEMA = {
     "publish_youtube": ("PUBLISH_YOUTUBE", False, "bool"),
     "publish_instagram": ("PUBLISH_INSTAGRAM", False, "bool"),
     "publish_tiktok": ("PUBLISH_TIKTOK", False, "bool"),
+    "long_to_social": ("LONG_TO_SOCIAL", False, "bool"),
     "youtube_privacy": ("YOUTUBE_PRIVACY", "private", "choice:private,unlisted,public"),
     "require_approval": ("REQUIRE_APPROVAL", False, "bool"),
     "niche": ("CHANNEL_NICHE", "", "text"),

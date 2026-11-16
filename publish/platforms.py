@@ -2,6 +2,7 @@
 import json
 import os
 import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -13,6 +14,24 @@ ROOT = Path(__file__).resolve().parent.parent
 def caption_text(meta, limit=2200):
     tags = " ".join("#" + t.lstrip("#").replace(" ", "") for t in meta.get("hashtags", []))
     return f"{meta['title']}\n\n{meta['description']}\n\n{tags}"[:limit]
+
+
+def light_copy(video, max_mb=60):
+    """Copie allégée pour Instagram (100 Mo max) et TikTok (envoi en un bloc, 64 Mo max).
+    Renvoie la vidéo d'origine si elle est déjà assez légère."""
+    video = Path(video)
+    if video.stat().st_size <= max_mb * 1024 * 1024:
+        return video
+    out = video.with_name("final_social.mp4")
+    if out.exists() and out.stat().st_size <= max_mb * 1024 * 1024:
+        return out
+    dur = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                         "-of", "csv=p=0", str(video)]))
+    kbps = int(max_mb * 8 * 1024 * 0.92 / dur) - 128      # marge de 8 %, moins la piste audio
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(video), "-c:v", "libx264", "-preset", "veryfast",
+                    "-b:v", f"{kbps}k", "-maxrate", f"{kbps}k", "-bufsize", f"{2 * kbps}k", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(out)], check=True)
+    return out
 
 
 # ---------------- YouTube ----------------
@@ -72,11 +91,13 @@ def _ig_token():
     return tok["token"]
 
 
-def publish_instagram(video, meta, date):
+def publish_instagram(video, meta, date, suffix=""):
+    """suffix : distingue les fichiers publics du même jour (ex. "-long")."""
+    video = light_copy(video)
     # 1) rendre la vidéo accessible publiquement via le serveur web du VPS
     pub_dir = Path(os.environ["PUBLIC_VIDEO_DIR"])
     pub_dir.mkdir(parents=True, exist_ok=True)
-    name = f"{date}.mp4"
+    name = f"{date}{suffix}.mp4"
     shutil.copy(video, pub_dir / name)
     url = os.environ["PUBLIC_VIDEO_BASE_URL"].rstrip("/") + "/" + name
 
@@ -133,6 +154,12 @@ def publish_tiktok(video, meta):
     options = info.get("privacy_level_options", [])
     privacy = "PUBLIC_TO_EVERYONE" if "PUBLIC_TO_EVERYONE" in options else options[0]
 
+    video = light_copy(video)
+    max_s = info.get("max_video_post_duration_sec")
+    dur = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                         "-of", "csv=p=0", str(video)]))
+    if max_s and dur > max_s:
+        raise RuntimeError(f"TikTok : vidéo de {dur:.0f} s, mais ce compte est limité à {max_s} s")
     size = Path(video).stat().st_size
     init = requests.post(f"{TT}/post/publish/video/init/", headers=h, timeout=60, json={
         "post_info": {"title": caption_text(meta), "privacy_level": privacy, "is_aigc": True,
