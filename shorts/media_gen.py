@@ -93,9 +93,11 @@ def _image_sources():
     return src
 
 
-def generate_images(prompts, out_dir, size=(768, 1344)):
+def generate_images(prompts, out_dir, size=(768, 1344), spare=()):
     """Une image par scène. Si un prompt est refusé : version adoucie, puis en dernier
-    recours réutilisation de l'image voisine, pour ne jamais bloquer toute la vidéo."""
+    recours réutilisation de l'image voisine, pour ne jamais bloquer toute la vidéo.
+    spare : images d'une autre vidéo du même sujet, utilisées si trop d'images manquent
+    (quota épuisé) ; le montage les recadre au bon format."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     sources = _image_sources()
@@ -124,7 +126,13 @@ def generate_images(prompts, out_dir, size=(768, 1344)):
             missing.append(i)
 
     if len(missing) > max(3, len(prompts) // 4):
-        raise RuntimeError(f"{len(missing)} images sur {len(prompts)} impossibles à générer : arrêt")
+        spare = [p for p in spare if Path(p).exists()]
+        if not spare:
+            raise RuntimeError(f"{len(missing)} images sur {len(prompts)} impossibles à générer : arrêt")
+        print(f"  {len(missing)} images impossibles à générer : réutilisation des images de la vidéo longue")
+        for i in missing:  # réparties sur toute la vidéo longue, dans l'ordre de l'histoire
+            shutil.copy(spare[min(len(spare) - 1, i * len(spare) // len(prompts))], paths[i])
+        return paths
     for i in missing:  # image voisine la plus proche déjà générée
         near = sorted((j for j in range(len(prompts)) if paths[j].exists()), key=lambda j: abs(j - i))
         if not near:

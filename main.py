@@ -50,7 +50,9 @@ def produce(kind, script, out):
     voice, words = media_gen.synthesize_voice(narration, out)
     print(f"[{kind}] images…")
     prompts = [script_writer.full_image_prompt(s, kind) for s in scenes]
-    images = media_gen.generate_images(prompts, out / "images", size)
+    # secours pour le Short si le quota d'images est épuisé : les images de la vidéo longue
+    spare = sorted((out.parent / "long" / "images").glob("scene_*.jpg")) if kind == "short" else ()
+    images = media_gen.generate_images(prompts, out / "images", size, spare=spare)
     print(f"[{kind}] montage…")
     final = editing.assemble(scenes, images, {}, voice, words, out,
                              music_dir=ROOT / "assets" / "music",
