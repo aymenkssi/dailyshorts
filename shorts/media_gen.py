@@ -43,13 +43,13 @@ def _soften(prompt):
     return "Peaceful, family-friendly illustration, fully clothed people. " + cleaned
 
 
-def _cf_image(prompt, seed):
+def _cf_image(prompt, seed, size=(768, 1344)):
     acc, tok = os.environ["CF_ACCOUNT_ID"], os.environ["CF_API_TOKEN"]
     model = os.environ.get("CF_IMAGE_MODEL", "@cf/black-forest-labs/flux-2-klein-4b")
     url = f"https://api.cloudflare.com/client/v4/accounts/{acc}/ai/run/{model}"
     headers = {"Authorization": f"Bearer {tok}"}
     if "flux-2" in model:  # FLUX.2 : formulaire multipart, format vertical natif
-        fields = {"prompt": prompt[:2000], "width": "768", "height": "1344", "seed": str(seed)}
+        fields = {"prompt": prompt[:2000], "width": str(size[0]), "height": str(size[1]), "seed": str(seed)}
         r = requests.post(url, headers=headers, files={k: (None, v) for k, v in fields.items()}, timeout=180)
     else:  # flux-1-schnell : JSON, image carrée recadrée ensuite
         r = requests.post(url, headers=headers, json={"prompt": prompt[:2000], "steps": 8, "seed": seed}, timeout=180)
@@ -63,14 +63,14 @@ def _cf_image(prompt, seed):
     return base64.b64decode(img.split(",", 1)[-1])
 
 
-def _freellmapi_image(prompt, seed=None):
+def _freellmapi_image(prompt, seed=None, size=(768, 1344)):
     """Secours : FreeLLMAPI route vers NVIDIA, SiliconFlow, Cloudflare (autre compte)…"""
     base = os.environ["LLM_BASE_URL"].rstrip("/")
     r = requests.post(
         f"{base}/images/generations",
         headers={"Authorization": f"Bearer {os.environ.get('LLM_API_KEY', '')}"},
         json={"model": os.environ.get("IMAGE_FALLBACK_MODEL", "auto"), "prompt": prompt[:2000],
-              "n": 1, "size": "768x1344", "response_format": "b64_json"},
+              "n": 1, "size": f"{size[0]}x{size[1]}", "response_format": "b64_json"},
         timeout=300,
     )
     _check(r)
@@ -93,7 +93,7 @@ def _image_sources():
     return src
 
 
-def generate_images(prompts, out_dir):
+def generate_images(prompts, out_dir, size=(768, 1344)):
     """Une image par scène. Si un prompt est refusé : version adoucie, puis en dernier
     recours réutilisation de l'image voisine, pour ne jamais bloquer toute la vidéo."""
     out_dir = Path(out_dir)
@@ -101,7 +101,7 @@ def generate_images(prompts, out_dir):
     sources = _image_sources()
     paths, missing = [], []
     for i, prompt in enumerate(prompts):
-        dest = out_dir / f"scene_{i:02d}.jpg"
+        dest = out_dir / f"scene_{i:03d}.jpg"
         paths.append(dest)
         if dest.exists():
             continue
@@ -109,7 +109,7 @@ def generate_images(prompts, out_dir):
         for label, text in (("", prompt), (" (prompt adouci)", _soften(prompt))):
             for name, fn in list(sources):
                 try:
-                    dest.write_bytes(_retry(lambda: fn(text, 1000 + i), tries=2, wait=5))
+                    dest.write_bytes(_retry(lambda: fn(text, 1000 + i, size), tries=2, wait=5))
                     print(f"  image {i + 1}/{len(prompts)} ok ({name}{label})")
                     done = True
                     break

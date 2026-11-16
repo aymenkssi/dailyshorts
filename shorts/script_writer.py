@@ -8,8 +8,9 @@ import requests
 STYLE = (
     "hand-painted 2D anime film still in the style of classic Japanese animation studios, "
     "soft warm lighting, detailed painted backgrounds, expressive characters, rich colors, "
-    "vertical composition, no text, no letters, no watermark"
+    "{framing}, no text, no letters, no watermark"
 )
+FRAMING = {"long": "wide cinematic 16:9 composition", "short": "vertical 9:16 composition"}
 
 SCHEMA_HINT = """Return ONLY a JSON object, no markdown, with exactly these keys:
 {
@@ -18,7 +19,7 @@ SCHEMA_HINT = """Return ONLY a JSON object, no markdown, with exactly these keys
   "description": "2-3 sentence description",
   "hashtags": ["5 to 8 hashtags without #"],
   "characters": {"character name": "fixed visual description: age, face, hair, clothing colors"},
-  "scenes": [{"narration": "exact words spoken over this shot, 6-14 words",
+  "scenes": [{"narration": "exact words spoken over this shot",
               "image_prompt": "visual description of the shot, repeating full character descriptions"}]
 }"""
 
@@ -43,7 +44,7 @@ def _endpoints(purpose):
     return eps
 
 
-def _chat(endpoint, system, user, temperature=0.8):
+def _chat(endpoint, system, user, temperature=0.8, max_tokens=8000):
     name, url, key, model = endpoint
     r = requests.post(
         url,
@@ -51,7 +52,7 @@ def _chat(endpoint, system, user, temperature=0.8):
         json={
             "model": model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            "max_tokens": 8000,
+            "max_tokens": max_tokens,
             "temperature": temperature,
         },
         timeout=600,  # 'fusion' interroge plusieurs modèles : peut prendre quelques minutes
@@ -73,51 +74,82 @@ def _parse(text):
     return data
 
 
-def _call(system, user, purpose="write", tries=2):
+def _call(system, user, purpose="write", tries=2, max_tokens=8000):
     err = None
     for ep in _endpoints(purpose):
         for _ in range(tries):
             try:
-                return _parse(_chat(ep, system, user))
+                return _parse(_chat(ep, system, user, max_tokens=max_tokens))
             except Exception as e:  # noqa: BLE001  -> erreur ou JSON invalide : on réessaie puis on passe au suivant
                 err = e
                 print(f"  {ep[0]}/{ep[3]} : échec ({str(e)[:200]})")
     raise RuntimeError(f"Script impossible à générer : {err}")
 
 
-def write_script(past_topics, target_seconds=120):
-    words = int(target_seconds * 2.5)  # ~150 mots/min
-    system = (
-        "You write viral, historically accurate YouTube Shorts / TikTok / Reels scripts about "
-        "little-known history: forgotten inventions, overlooked civilizations, the Islamic Golden Age, "
-        "ancient science, surprising customs. Tone: vivid storytelling, short punchy sentences, "
-        "a contrast or twist. Never invent facts, names, dates or quotes; prefer well-documented events."
-    )
-    user = f"""Write today's video in English.
+WRITER = (
+    "You write historically accurate, gripping YouTube scripts about little-known history: forgotten "
+    "inventions, overlooked civilizations, the Islamic Golden Age, ancient science, surprising customs. "
+    "Tone: vivid storytelling, short clear sentences, concrete details, a contrast or twist. "
+    "Never invent facts, names, dates or quotes; prefer well-documented events."
+)
+
+
+def write_long(past_topics, seconds=240):
+    """Vidéo longue horizontale : récit complet (~150 mots/min)."""
+    words = int(seconds * 2.5)
+    user = f"""Write today's long-form video (horizontal, about {seconds // 60} minutes) in English.
 
 Constraints:
-- Total narration: about {words} words (~{target_seconds} s spoken).
-- First scene = hook that creates curiosity in under 3 seconds (a contrast, a surprising claim).
-- Last scene = memorable closing line (no "like and subscribe").
-- {words // 8} to {words // 6} scenes; each scene's narration is 6-14 words and is one continuous visual shot.
+- Total narration: about {words} words (~{seconds} s spoken).
+- Structure: a hook in the first 10 seconds, the setting and the people, the story told step by step
+  with concrete details, a turning point, what it changed, and a memorable closing line
+  (no "like and subscribe").
+- {words // 12} to {words // 9} scenes; each scene's narration is 8-16 words and is one continuous visual shot.
 - Concatenating all scene narrations must give the full script, in order.
-- image_prompt: concrete subject, setting, action, camera framing. Describe recurring characters identically every time.
+- image_prompt: concrete subject, setting, action, wide framing. Describe recurring characters identically every time.
 - Topic must be different from these already published topics: {json.dumps(past_topics[-300:])}
 
 {SCHEMA_HINT}"""
-    return _call(system, user)
+    return _call(WRITER, user, max_tokens=14000)
+
+
+def write_teaser(long_script, seconds=40):
+    """Short vertical d'accroche tiré de la vidéo longue : intrigue sans dévoiler la fin."""
+    words = int(seconds * 2.5)
+    story = " ".join(sc["narration"] for sc in long_script["scenes"])
+    user = f"""Here is the narration of today's long-form video, titled "{long_script['title']}":
+
+{story}
+
+Write a vertical teaser Short (about {seconds} s, ~{words} words) for the SAME story, in English.
+
+Constraints:
+- First scene = hook that creates curiosity in under 3 seconds (a contrast, a surprising claim).
+- Tell only the beginning: build the mystery, stop on a cliffhanger, do NOT reveal the ending.
+- Last scene's narration must be exactly: "The full story is on our channel."
+- {max(6, words // 11)} to {max(8, words // 8)} scenes; each scene's narration is 6-12 words and is one continuous visual shot.
+- Use only facts present in the narration above. Keep the same "topic" and the same character descriptions:
+  {json.dumps(long_script.get("characters", {}), ensure_ascii=False)}
+- "title": a different, punchy title (max 80 chars, no hashtags).
+- image_prompt: concrete subject, setting, action, vertical framing.
+
+{SCHEMA_HINT}"""
+    teaser = _call(WRITER, user)
+    teaser["topic"] = long_script["topic"]
+    return teaser
 
 
 def fact_check(script):
     system = (
-        "You are a rigorous history fact-checker. You receive a short-video script as JSON. "
+        "You are a rigorous history fact-checker. You receive a video script as JSON. "
         "Fix anything inaccurate, exaggerated or unverifiable by rewriting it so it is true "
         "(hedge with 'historians believe' etc. if needed). Keep the same structure, number of scenes, "
         "style, length and all other fields. " + SCHEMA_HINT
     )
     try:
-        checked = _call(system, json.dumps(script, ensure_ascii=False), purpose="check")
-        if abs(len(checked["scenes"]) - len(script["scenes"])) > 2:
+        checked = _call(system, json.dumps(script, ensure_ascii=False), purpose="check", max_tokens=14000)
+        n = len(script["scenes"])
+        if abs(len(checked["scenes"]) - n) > max(2, n // 10):
             raise RuntimeError("le vérificateur a trop modifié la structure")
         return checked
     except Exception as e:  # noqa: BLE001
@@ -125,5 +157,5 @@ def fact_check(script):
         return script
 
 
-def full_image_prompt(scene):
-    return f"{scene['image_prompt']}. {STYLE}"
+def full_image_prompt(scene, kind="short"):
+    return f"{scene['image_prompt']}. {STYLE.format(framing=FRAMING[kind])}"

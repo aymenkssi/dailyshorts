@@ -1,8 +1,8 @@
-"""Génère et publie la vidéo du jour.
+"""Génère et publie les vidéos du jour : une vidéo longue (horizontale) + un Short d'accroche (vertical).
 
 Usage :
-  python main.py                 # génère + publie (date du jour)
-  python main.py --no-publish    # génère seulement (pour tester)
+  python main.py                     # génère + publie (date du jour)
+  python main.py --no-publish        # génère seulement (pour tester)
   python main.py --date 2026-11-02   # reprend/relance un jour donné (les étapes déjà faites sont sautées)
 """
 import argparse
@@ -23,10 +23,39 @@ from shorts import editing, media_gen, script_writer  # noqa: E402
 from publish import platforms  # noqa: E402
 
 HISTORY = ROOT / "state" / "history.json"
+FORMATS = {
+    # nom : (mise en page, taille des images demandées)
+    "long": (editing.LONG, (1344, 768)),
+    "short": (editing.SHORT, (768, 1344)),
+}
 
 
 def on(var):
     return os.environ.get(var, "false").lower() in ("1", "true", "yes")
+
+
+def produce(kind, script, out):
+    """Voix, images et montage d'une vidéo ; renvoie le chemin du fichier final."""
+    layout, size = FORMATS[kind]
+    out.mkdir(parents=True, exist_ok=True)
+    final = out / "final.mp4"
+    if final.exists():
+        return final
+    scenes = script["scenes"]
+    print(f"[{kind}] {script['title']} — {len(scenes)} plans")
+    print(f"[{kind}] voix off…")
+    narration = " ".join(s["narration"].strip() for s in scenes)
+    voice, words = media_gen.synthesize_voice(narration, out)
+    print(f"[{kind}] images…")
+    prompts = [script_writer.full_image_prompt(s, kind) for s in scenes]
+    images = media_gen.generate_images(prompts, out / "images", size)
+    print(f"[{kind}] montage…")
+    final = editing.assemble(scenes, images, {}, voice, words, out,
+                             music_dir=ROOT / "assets" / "music",
+                             music_volume=float(os.environ.get("MUSIC_VOLUME", 0.1)),
+                             layout=layout)
+    print(f"[{kind}] vidéo : {final} ({editing.media_duration(final):.0f} s)")
+    return final
 
 
 def main():
@@ -39,54 +68,49 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     history = json.loads(HISTORY.read_text()) if HISTORY.exists() else []
 
-    # 1. Script
-    script_file = out / "script.json"
+    # 1. Scripts : vidéo longue (écrite puis vérifiée), puis Short d'accroche tiré de la même histoire
+    script_file = out / "scripts.json"
     if script_file.exists():
-        script = json.loads(script_file.read_text())
+        scripts = json.loads(script_file.read_text())
     else:
-        print("1/4 Script…")
-        draft = script_writer.write_script(
-            [h["topic"] for h in history],
-            target_seconds=int(os.environ.get("TARGET_SECONDS", 120)),
-        )
-        script = script_writer.fact_check(draft)
-        script_file.write_text(json.dumps(script, indent=2, ensure_ascii=False))
-    scenes = script["scenes"]
-    print(f"   Sujet : {script['topic']} — {len(scenes)} plans")
+        print("Scripts…")
+        long_script = script_writer.fact_check(script_writer.write_long(
+            [h["topic"] for h in history], seconds=int(os.environ.get("LONG_SECONDS", 240))))
+        teaser = script_writer.write_teaser(long_script, seconds=int(os.environ.get("SHORT_SECONDS", 40)))
+        scripts = {"long": long_script, "short": teaser}
+        script_file.write_text(json.dumps(scripts, indent=2, ensure_ascii=False))
+    print(f"Sujet : {scripts['long']['topic']}")
 
-    # 2. Voix
-    print("2/4 Voix off…")
-    narration = " ".join(s["narration"].strip() for s in scenes)
-    voice, words = media_gen.synthesize_voice(narration, out)
-
-    # 3. Images
-    print("3/4 Images…")
-    images = media_gen.generate_images([script_writer.full_image_prompt(s) for s in scenes], out / "images")
-
-    # 4. Montage (zoom/pan fluide sur chaque image)
-    print("4/4 Montage…")
-    final = editing.assemble(scenes, images, {}, voice, words, out,
-                             music_dir=ROOT / "assets" / "music",
-                             music_volume=float(os.environ.get("MUSIC_VOLUME", 0.1)))
-    print(f"   Vidéo : {final} ({editing.media_duration(final):.0f} s)")
+    # 2. Production des deux vidéos
+    finals = {kind: produce(kind, scripts[kind], out / kind) for kind in ("long", "short")}
 
     if not any(h["date"] == args.date for h in history):
-        history.append({"date": args.date, "topic": script["topic"], "title": script["title"]})
+        history.append({"date": args.date, "topic": scripts["long"]["topic"], "title": scripts["long"]["title"]})
         HISTORY.write_text(json.dumps(history, indent=1, ensure_ascii=False))
 
     if args.no_publish:
         return
 
-    # Publication (chaque plateforme indépendante ; déjà publié = sauté)
+    # 3. Publication (chaque cible indépendante ; déjà publié = sauté)
     results_file = out / "published.json"
     results = json.loads(results_file.read_text()) if results_file.exists() else {}
-    targets = {
-        "youtube": (on("PUBLISH_YOUTUBE"), lambda: platforms.publish_youtube(final, script)),
-        "instagram": (on("PUBLISH_INSTAGRAM"), lambda: platforms.publish_instagram(final, script, args.date)),
-        "tiktok": (on("PUBLISH_TIKTOK"), lambda: platforms.publish_tiktok(final, script)),
-    }
+
+    def long_link():
+        """Lien de la vidéo longue, ajouté à la description du Short une fois celle-ci publiée."""
+        r = str(results.get("youtube_long", ""))
+        return f"▶ Full story: {r[3:]}" if r.startswith("OK ") else ""
+
+    yt = on("PUBLISH_YOUTUBE")
+    targets = [
+        ("youtube_long", yt, lambda: platforms.publish_youtube(finals["long"], scripts["long"], short=False)),
+        ("youtube_short", yt, lambda: platforms.publish_youtube(finals["short"], scripts["short"], short=True,
+                                                                 extra=long_link())),
+        ("instagram", on("PUBLISH_INSTAGRAM"),
+         lambda: platforms.publish_instagram(finals["short"], scripts["short"], args.date)),
+        ("tiktok", on("PUBLISH_TIKTOK"), lambda: platforms.publish_tiktok(finals["short"], scripts["short"])),
+    ]
     failed = False
-    for name, (enabled, fn) in targets.items():
+    for name, enabled, fn in targets:
         if not enabled or str(results.get(name, "")).startswith("OK"):
             continue
         try:
@@ -95,7 +119,7 @@ def main():
             failed = True
             results[name] = f"ERREUR {e}"
             traceback.print_exc()
-        print(f"   {name} : {results[name]}")
+        print(f"{name} : {results[name]}")
         results_file.write_text(json.dumps(results, indent=1))
     sys.exit(1 if failed else 0)
 

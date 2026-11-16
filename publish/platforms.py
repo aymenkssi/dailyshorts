@@ -1,4 +1,4 @@
-"""Publication automatique : YouTube Shorts, Instagram Reels, TikTok."""
+"""Publication automatique : YouTube (vidéo longue + Short), Instagram Reels, TikTok."""
 import json
 import os
 import shutil
@@ -16,7 +16,8 @@ def caption_text(meta, limit=2200):
 
 
 # ---------------- YouTube ----------------
-def publish_youtube(video, meta):
+def publish_youtube(video, meta, short=True, extra=""):
+    """short=True : Short vertical (#shorts) ; False : vidéo longue. extra : texte ajouté en tête de description."""
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build
@@ -30,8 +31,8 @@ def publish_youtube(video, meta):
     yt = build("youtube", "v3", credentials=creds)
     body = {
         "snippet": {
-            "title": (meta["title"][:90] + " #shorts")[:100],
-            "description": caption_text(meta, 4900),
+            "title": (meta["title"][:90] + " #shorts")[:100] if short else meta["title"][:100],
+            "description": ((extra + "\n\n") if extra else "") + caption_text(meta, 4800),
             "tags": meta.get("hashtags", [])[:15],
             "categoryId": "27",  # Education
         },
@@ -46,7 +47,7 @@ def publish_youtube(video, meta):
     resp = None
     while resp is None:
         _, resp = req.next_chunk()
-    return f"https://youtube.com/shorts/{resp['id']}"
+    return f"https://youtube.com/shorts/{resp['id']}" if short else f"https://youtu.be/{resp['id']}"
 
 
 # ---------------- Instagram ----------------

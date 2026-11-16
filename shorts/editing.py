@@ -1,20 +1,35 @@
-"""Étapes 4-5 : sous-titres mot à mot, plans (zoom/pan ou clip animé) et montage final."""
+"""Sous-titres mot à mot, plans (zoom/pan) et montage final, en vertical (Short) ou horizontal (vidéo longue)."""
 import json
 import random
 import re
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-W, H, FPS = 1080, 1920, 30
+FPS = 30
 ROOT = Path(__file__).resolve().parent.parent
 FONT = ROOT / "assets" / "fonts" / "Poppins-Bold.ttf"
 
-# Style des sous-titres (calé sur la vidéo d'exemple)
-CAP_SIZE = 100
-CAP_BOX_H = 600                    # hauteur de la bande transparente des sous-titres
-CAP_CENTER_Y = int(H * 0.47)       # centre vertical des sous-titres à l'écran
+
+@dataclass(frozen=True)
+class Layout:
+    w: int
+    h: int
+    cap_size: int        # taille de police des sous-titres
+    cap_box_h: int       # hauteur de la bande transparente des sous-titres
+    cap_center_y: int    # centre vertical des sous-titres à l'écran
+    per_chunk: int       # mots affichés ensemble
+    stacked: bool        # True : un mot par ligne (vertical) ; False : une seule ligne (horizontal)
+    maxrate: str
+
+
+# Short vertical : 2 mots empilés au milieu de l'écran (calé sur la vidéo d'exemple)
+SHORT = Layout(1080, 1920, 100, 600, int(1920 * 0.47), 2, True, "5M")
+# Vidéo longue horizontale : une ligne de 4 mots en bas de l'écran
+LONG = Layout(1920, 1080, 68, 180, int(1080 * 0.86), 4, False, "6M")
+
 ACCENT = (124, 58, 237, 240)       # violet du mot actif
 STROKE = (17, 17, 17, 255)
 
@@ -70,36 +85,46 @@ def caption_chunks(words, scene_ranges, per_chunk=2):
     return chunks
 
 
-def render_caption(words_txt, active, font):
-    img = Image.new("RGBA", (W, CAP_BOX_H), (0, 0, 0, 0))
+def render_caption(words_txt, active, font, L):
+    img = Image.new("RGBA", (L.w, L.cap_box_h), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    line_h = int(CAP_SIZE * 1.12)
-    top = CAP_BOX_H // 2 - line_h * len(words_txt) // 2 + line_h // 2
-    for k, txt in enumerate(words_txt):
-        cy = top + k * line_h
+    if L.stacked:  # un mot par ligne, centré
+        line_h = int(L.cap_size * 1.12)
+        top = L.cap_box_h // 2 - line_h * len(words_txt) // 2 + line_h // 2
+        spots = [(L.w // 2, top + k * line_h) for k in range(len(words_txt))]
+    else:          # une seule ligne, mots côte à côte
+        space = int(L.cap_size * 0.42)
+        widths = [d.textlength(t, font=font) for t in words_txt]
+        x = (L.w - sum(widths) - space * (len(words_txt) - 1)) / 2
+        spots = []
+        for wd in widths:
+            spots.append((x + wd / 2, L.cap_box_h // 2))
+            x += wd + space
+    pad_x, pad_y, radius = L.cap_size * 0.24, L.cap_size * 0.14, int(L.cap_size * 0.22)
+    for k, (txt, (cx, cy)) in enumerate(zip(words_txt, spots)):
         if k == active:
-            x0, y0, x1, y1 = d.textbbox((W // 2, cy), txt, font=font, anchor="mm")
-            d.rounded_rectangle((x0 - 24, y0 - 14, x1 + 24, y1 + 14), radius=22, fill=ACCENT)
-        d.text((W // 2, cy), txt, font=font, anchor="mm", fill="white",
+            x0, y0, x1, y1 = d.textbbox((cx, cy), txt, font=font, anchor="mm")
+            d.rounded_rectangle((x0 - pad_x, y0 - pad_y, x1 + pad_x, y1 + pad_y), radius=radius, fill=ACCENT)
+        d.text((cx, cy), txt, font=font, anchor="mm", fill="white",
                stroke_width=4 if k != active else 2, stroke_fill=STROKE)
     return img
 
 
-def build_captions(words, scene_ranges, total_dur, out_dir):
+def build_captions(words, scene_ranges, total_dur, out_dir, L):
     """Crée une image par mot + un fichier concat ffmpeg avec les durées."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    font = ImageFont.truetype(str(FONT), CAP_SIZE)
+    font = ImageFont.truetype(str(FONT), L.cap_size)
     blank = out_dir / "blank.png"
-    Image.new("RGBA", (W, CAP_BOX_H), (0, 0, 0, 0)).save(blank)
+    Image.new("RGBA", (L.w, L.cap_box_h), (0, 0, 0, 0)).save(blank)
 
     events = []  # (start, png)
-    chunks = caption_chunks(words, scene_ranges)
+    chunks = caption_chunks(words, scene_ranges, L.per_chunk)
     for c, chunk in enumerate(chunks):
         txts = [_clean(words[i]["word"]) for i in chunk]
         for k, i in enumerate(chunk):
             png = out_dir / f"c{c:03d}_{k}.png"
-            render_caption(txts, k, font).save(png)
+            render_caption(txts, k, font, L).save(png)
             events.append((words[i]["start"], png))
         # pause dans la voix -> on efface après le dernier mot du groupe
         clear_at = words[chunk[-1]]["end"] + 0.35
@@ -124,11 +149,12 @@ def build_captions(words, scene_ranges, total_dur, out_dir):
 MOTIONS = ["zoom_in", "zoom_out", "pan_up", "pan_down", "zoom_in", "pan_left", "pan_right"]
 
 
-def still_clip(img_path, dur, motion, out):
+def still_clip(img_path, dur, motion, out, L):
     """Zoom/pan fluide (sous-pixel) sur une image fixe, rendu via Pillow -> ffmpeg."""
+    W, H = L.w, L.h
     src = Image.open(img_path).convert("RGB")
     sw, sh = src.size
-    # cadre 9:16 maximal dans l'image
+    # plus grand cadre au format de la vidéo dans l'image
     if sw / sh > W / H:
         bw, bh = sh * W / H, sh
     else:
@@ -164,8 +190,9 @@ def still_clip(img_path, dur, motion, out):
         raise RuntimeError(f"ffmpeg a échoué pour {img_path}")
 
 
-def animated_clip(video_path, dur, out):
-    """Clip IA recadré en 9:16 ; légèrement ralenti puis figé s'il est trop court."""
+def animated_clip(video_path, dur, out, L):
+    """Clip animé recadré au format ; légèrement ralenti puis figé s'il est trop court."""
+    W, H = L.w, L.h
     src_dur = media_duration(video_path)
     slow = min(1.5, max(1.0, dur / src_dur))
     run([
@@ -177,7 +204,8 @@ def animated_clip(video_path, dur, out):
 
 
 # ---------- Montage ----------
-def assemble(scenes, images, animated, voice, words, out_dir, music_dir=None, music_volume=0.1):
+def assemble(scenes, images, animated, voice, words, out_dir, music_dir=None, music_volume=0.1, layout=SHORT):
+    L = layout
     out_dir = Path(out_dir)
     clips_dir = out_dir / "clips"
     clips_dir.mkdir(parents=True, exist_ok=True)
@@ -188,12 +216,12 @@ def assemble(scenes, images, animated, voice, words, out_dir, music_dir=None, mu
     rnd = random.Random(str(out_dir))
     clip_list = []
     for i, (s, e) in enumerate(timings):
-        out = clips_dir / f"clip_{i:02d}.mp4"
+        out = clips_dir / f"clip_{i:03d}.mp4"
         if not out.exists():
             if i in animated:
-                animated_clip(animated[i], e - s, out)
+                animated_clip(animated[i], e - s, out, L)
             else:
-                still_clip(images[i], e - s, rnd.choice(MOTIONS), out)
+                still_clip(images[i], e - s, rnd.choice(MOTIONS), out, L)
         clip_list.append(out)
 
     concat = clips_dir / "clips.txt"
@@ -201,7 +229,7 @@ def assemble(scenes, images, animated, voice, words, out_dir, music_dir=None, mu
     video = out_dir / "video_noaudio.mp4"
     run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat), "-c", "copy", str(video)])
 
-    captions = build_captions(words, ranges, total, out_dir / "captions")
+    captions = build_captions(words, ranges, total, out_dir / "captions", L)
 
     music = None
     if music_dir and music_volume > 0:
@@ -213,7 +241,7 @@ def assemble(scenes, images, animated, voice, words, out_dir, music_dir=None, mu
     cmd = ["ffmpeg", "-y", "-i", str(video), "-i", str(voice),
            "-f", "concat", "-safe", "0", "-i", str(captions)]
     fc = (f"[2:v]fps={FPS},format=rgba[cap];"
-          f"[0:v][cap]overlay=0:{CAP_CENTER_Y - CAP_BOX_H // 2}:eof_action=pass,format=yuv420p[v];")
+          f"[0:v][cap]overlay=0:{L.cap_center_y - L.cap_box_h // 2}:eof_action=pass,format=yuv420p[v];")
     if music:
         cmd += ["-stream_loop", "-1", "-i", str(music)]
         fc += (f"[3:a]volume={music_volume},afade=t=out:st={max(0, total - 2):.2f}:d=2[m];"
@@ -221,7 +249,7 @@ def assemble(scenes, images, animated, voice, words, out_dir, music_dir=None, mu
     else:
         fc += "[1:a]anull[a]"
     cmd += ["-filter_complex", fc, "-map", "[v]", "-map", "[a]", "-t", f"{total:.3f}",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-maxrate", "5M", "-bufsize", "10M",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-maxrate", L.maxrate, "-bufsize", "12M",
             "-pix_fmt", "yuv420p", "-r", str(FPS),
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", str(final)]
     run(cmd)

@@ -5,7 +5,7 @@ Daily Shorts se déploie comme Waselni : une pile **Docker Compose** derrière l
 | Conteneur | Rôle | Exposition |
 |---|---|---|
 | `dailyshorts-freellmapi` | routeur de LLM gratuits | `127.0.0.1:3001` seulement (tunnel SSH) |
-| `dailyshorts-pipeline` | génère et publie la vidéo chaque jour à 16 h 47 (heure de Paris) | aucune |
+| `dailyshorts-pipeline` | génère et publie chaque jour à 16 h 47 une vidéo longue (4 min) et un Short d'accroche (heure de Paris) | aucune |
 | `dailyshorts-media` | sert `https://aymendridi.com/shorts/*.mp4` pour Instagram | via Traefik |
 
 Les commandes se lancent sur le VPS, sauf les blocs marqués **(PC)**. `user@IP_VPS` = ton accès SSH.
@@ -142,7 +142,7 @@ sudo rm public/test.mp4
 
 ```bash
 docker compose exec shorts python tools/check_services.py     # toutes les lignes [OK]
-docker compose exec shorts python main.py --no-publish        # 10 à 20 min
+docker compose exec shorts python main.py --no-publish        # 20 à 40 min (vidéo longue + Short)
 ```
 
 Le premier passage télécharge le modèle de voix (~330 Mo, gardé dans le volume `kokoro_cache`).
@@ -150,10 +150,11 @@ Le premier passage télécharge le modèle de voix (~330 Mo, gardé dans le volu
 **(PC)** Récupère la vidéo :
 
 ```bash
-scp user@IP_VPS:/opt/dailyshorts/output/<date>/final.mp4 .
+scp user@IP_VPS:/opt/dailyshorts/output/<date>/long/final.mp4 longue.mp4
+scp user@IP_VPS:/opt/dailyshorts/output/<date>/short/final.mp4 short.mp4
 ```
 
-Vérifie la synchronisation voix/sous-titres, les images et les faits (`output/<date>/script.json`). Pour refaire le même jour : `sudo rm -rf output/<date>`.
+Vérifie la synchronisation voix/sous-titres, les images et les faits (`output/<date>/scripts.json`). Pour refaire le même jour : `sudo rm -rf output/<date>`.
 
 ---
 
@@ -235,7 +236,7 @@ Dans `.env` : `PUBLISH_YOUTUBE=true` (et les autres quand ils sont prêts), puis
 ```bash
 docker compose up -d shorts                               # recharge le .env
 docker compose exec shorts python main.py                 # premier passage réel
-cat output/$(TZ=Europe/Paris date +%F)/published.json     # "OK …" par plateforme
+cat output/$(TZ=Europe/Paris date +%F)/published.json     # youtube_long, youtube_short, instagram, tiktok : "OK …"
 ```
 
 En cas d'erreur sur une plateforme : corrige et relance la même commande (la vidéo n'est pas regénérée, les plateformes réussies sont sautées).
