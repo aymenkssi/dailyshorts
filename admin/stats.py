@@ -89,10 +89,12 @@ def instagram():
         tok = (_json(STATE / "ig_token.json") or {}).get("token") or os.environ.get("IG_ACCESS_TOKEN", "")
         if not uid or not tok or uid == "..." or tok == "...":
             raise RuntimeError("non connecté")
-        base = f"https://graph.instagram.com/{os.environ.get('IG_GRAPH_VERSION', 'v23.0')}"
+        host = os.environ.get("IG_GRAPH_HOST", "graph.facebook.com")
+        base = f"https://{host}/{os.environ.get('IG_GRAPH_VERSION', 'v23.0')}"
         r = requests.get(f"{base}/{uid}", timeout=30, params={
             "fields": "username,followers_count,media_count", "access_token": tok})
-        r.raise_for_status()
+        if not r.ok:
+            raise RuntimeError(f"Instagram {r.status_code} : {r.text[:200]}")
         d = r.json()
         out = {"name": d.get("username", ""), "followers": d.get("followers_count", 0),
                "media": d.get("media_count", 0), "recent": []}

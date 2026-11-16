@@ -51,8 +51,16 @@ def publish_youtube(video, meta, short=True, extra=""):
 
 
 # ---------------- Instagram ----------------
+def _ig_host():
+    """graph.facebook.com : connexion unifiée (applis Meta récentes, jeton du portefeuille business).
+    graph.instagram.com : ancienne « connexion Instagram » (jeton de 60 jours à rafraîchir)."""
+    return os.environ.get("IG_GRAPH_HOST", "graph.facebook.com")
+
+
 def _ig_token():
-    """Rafraîchit le jeton longue durée (valable 60 j) et le garde dans state/."""
+    """Renvoie le jeton ; en mode « connexion Instagram », le rafraîchit chaque semaine dans state/."""
+    if _ig_host() != "graph.instagram.com":
+        return os.environ["IG_ACCESS_TOKEN"]
     state = ROOT / "state" / "ig_token.json"
     tok = json.loads(state.read_text()) if state.exists() else {"token": os.environ["IG_ACCESS_TOKEN"], "ts": 0}
     if time.time() - tok["ts"] > 7 * 86400:
@@ -72,12 +80,13 @@ def publish_instagram(video, meta, date):
     shutil.copy(video, pub_dir / name)
     url = os.environ["PUBLIC_VIDEO_BASE_URL"].rstrip("/") + "/" + name
 
-    base = f"https://graph.instagram.com/{os.environ.get('IG_GRAPH_VERSION', 'v23.0')}"
+    base = f"https://{_ig_host()}/{os.environ.get('IG_GRAPH_VERSION', 'v23.0')}"
     uid, token = os.environ["IG_USER_ID"], _ig_token()
     r = requests.post(f"{base}/{uid}/media", data={
         "media_type": "REELS", "video_url": url, "caption": caption_text(meta),
         "share_to_feed": "true", "access_token": token}, timeout=120)
-    r.raise_for_status()
+    if not r.ok:
+        raise RuntimeError(f"Instagram {r.status_code} : {r.text[:400]}")
     container = r.json()["id"]
     # 2) attendre le traitement côté Meta
     for _ in range(30):
