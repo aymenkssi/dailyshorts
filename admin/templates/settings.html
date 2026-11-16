@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Réglages{% endblock %}
+{% block body %}
+<h1>Réglages</h1>
+<form method="post" action="/reglages"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="grid">
+<div class="card"><h2>Programmation</h2>
+  <div class="row2">
+    <div><label for="g">Heure de création</label><input id="g" type="time" name="generate_at" value="{{ s.generate_at }}" required></div>
+    <div><label for="p">Heure de publication</label><input id="p" type="time" name="publish_at" value="{{ s.publish_at }}" required></div>
+  </div>
+  <p class="hint">Heure de Paris. La création prend 20 à 40 minutes : laisse au moins une heure avant la publication.</p>
+  <label class="check"><input type="checkbox" name="require_approval" {{ 'checked' if s.require_approval }}> Exiger ma validation avant de publier</label>
+  <p class="hint">Si coché, les vidéos attendent ton approbation dans le tableau de bord. Sans approbation le jour même, rien n'est publié.</p>
+</div>
+<div class="card"><h2>Publication</h2>
+  <label class="check"><input type="checkbox" name="publish_youtube" {{ 'checked' if s.publish_youtube }}> YouTube (vidéo longue + Short)</label>
+  <label class="check"><input type="checkbox" name="publish_instagram" {{ 'checked' if s.publish_instagram }}> Instagram (Short)</label>
+  <label class="check"><input type="checkbox" name="publish_tiktok" {{ 'checked' if s.publish_tiktok }}> TikTok (Short)</label>
+  <label for="yp">Visibilité sur YouTube</label>
+  <select id="yp" name="youtube_privacy">
+    {% for v, l in (('private', 'Privée'), ('unlisted', 'Non répertoriée'), ('public', 'Publique')) %}<option value="{{ v }}" {{ 'selected' if s.youtube_privacy == v }}>{{ l }}</option>{% endfor %}
+  </select>
+  <p class="hint">Une plateforme ne peut publier que si son compte est connecté sur le serveur.</p>
+</div>
+<div class="card"><h2>Contenu</h2>
+  <div class="row2">
+    <div><label for="ls">Durée de la vidéo longue (s)</label><input id="ls" type="number" name="long_seconds" min="60" max="600" step="10" value="{{ s.long_seconds }}"></div>
+    <div><label for="ss">Durée du Short (s)</label><input id="ss" type="number" name="short_seconds" min="15" max="90" step="5" value="{{ s.short_seconds }}"></div>
+  </div>
+  <p class="hint">Au-delà de 5 minutes, le quota gratuit d'images peut manquer : certaines images seraient réutilisées.</p>
+  <label for="n">Ligne éditoriale (facultatif)</label>
+  <textarea id="n" name="niche" rows="3" maxlength="600" placeholder="Ex. : sciences et inventions du monde arabo-musulman médiéval, ton respectueux, pas de sujets militaires">{{ s.niche }}</textarea>
+  <p class="hint">Consigne ajoutée à chaque script, en plus du thème « histoire méconnue ».</p>
+</div>
+<div class="card"><h2>Voix et musique</h2>
+  <label for="v">Voix</label>
+  <select id="v" name="kokoro_voice">
+    {% for v, l in (('am_michael', 'Michael (américain)'), ('am_fenrir', 'Fenrir (américain, grave)'), ('am_puck', 'Puck (américain, vif)'), ('bm_george', 'George (britannique)'), ('bm_fable', 'Fable (britannique, conteur)')) %}<option value="{{ v }}" {{ 'selected' if s.kokoro_voice == v }}>{{ l }}</option>{% endfor %}
+  </select>
+  <label for="mv">Volume de la musique de fond (0 à 1)</label>
+  <input id="mv" type="number" name="music_volume" min="0" max="1" step="0.05" value="{{ s.music_volume }}">
+  <p class="hint">La musique vient des fichiers mp3 déposés dans <code>assets/music/</code> sur le serveur. 0 = sans musique.</p>
+</div>
+</div>
+<div class="actions"><button class="primary">Enregistrer</button></div>
+</form>
+<p class="hint" style="margin-top:20px">Les clés des fournisseurs d'IA se gèrent dans <a href="{{ llm_url }}" target="_blank" rel="noopener">FreeLLMAPI</a>. Les jetons YouTube, Instagram et TikTok se configurent sur le serveur (voir DEPLOIEMENT.md).</p>
+{% endblock %}

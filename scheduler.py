@@ -1,12 +1,12 @@
-"""Planificateur du conteneur, en deux temps (fuseau RUN_TZ) :
+"""Planificateur du conteneur, piloté par les réglages de l'interface d'administration.
 
-- GENERATE_AT : création des vidéos du jour, sans publier (par défaut 01:00)
-- PUBLISH_AT  : publication des vidéos du jour (par défaut 16:47 ; ancien nom : RUN_AT)
+- generate_at : création des vidéos du jour, sans publier
+- publish_at  : publication des vidéos du jour (si la validation est exigée : seulement une fois approuvées)
 
-Il rattrape une étape manquée si le conteneur démarre après l'heure prévue, réessaie en cas
-d'échec (main.py reprend là où il s'était arrêté) et fait le ménage : dossiers de travail de
-plus de 30 jours, vidéos publiques de plus de 7 jours. Si les vidéos ne sont pas prêtes à
-l'heure de publication, elles sont créées à ce moment-là, puis publiées.
+Il relit les réglages chaque minute, rattrape une étape manquée au démarrage, réessaie en cas
+d'échec (main.py reprend là où il s'était arrêté), obéit aux actions de l'admin (approuver,
+refuser, refaire, publier maintenant) et fait le ménage des anciens fichiers.
+Tout ce qu'il affiche est aussi écrit dans output/scheduler.log, lu par l'admin.
 """
 import datetime as dt
 import os
@@ -18,56 +18,83 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT))
+from shorts import store  # noqa: E402
+
 TZ = ZoneInfo(os.environ.get("RUN_TZ", "Europe/Paris"))
-PUBLISH_AT = dt.time.fromisoformat(os.environ.get("PUBLISH_AT") or os.environ.get("RUN_AT") or "16:47")
-_gen = os.environ.get("GENERATE_AT", "01:00").strip()
-GENERATE_AT = dt.time.fromisoformat(_gen) if _gen else None      # vide : tout se fait à PUBLISH_AT
 RETRIES = int(os.environ.get("RUN_RETRIES", 2))
 RETRY_WAIT = int(os.environ.get("RUN_RETRY_MINUTES", 30)) * 60
 KEEP_OUTPUT_DAYS = int(os.environ.get("KEEP_OUTPUT_DAYS", 30))
 KEEP_PUBLIC_DAYS = int(os.environ.get("KEEP_PUBLIC_DAYS", 7))
+LOG_FILE = ROOT / "output" / "scheduler.log"
+_last_note = None
+
+
+def emit(line):
+    print(line, flush=True)
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
 
 
 def log(msg):
-    print(f"[{dt.datetime.now(TZ):%Y-%m-%d %H:%M:%S}] {msg}", flush=True)
+    emit(f"[{dt.datetime.now(TZ):%Y-%m-%d %H:%M:%S}] {msg}")
 
 
-def flag(day, name):
-    return ROOT / "output" / day / name
+def note(msg):
+    """Message d'attente : affiché seulement quand il change, pour ne pas remplir le journal."""
+    global _last_note
+    if msg != _last_note:
+        _last_note = msg
+        log(msg)
 
 
-def set_flag(day, name):
-    flag(day, name).parent.mkdir(parents=True, exist_ok=True)
-    flag(day, name).touch()
+def trim_log(keep=3000):
+    try:
+        lines = LOG_FILE.read_text().splitlines()
+        if len(lines) > keep:
+            LOG_FILE.write_text("\n".join(lines[-keep:]) + "\n")
+    except OSError:
+        pass
 
 
 def cleanup(now):
     out = ROOT / "output"
-    if out.exists():
-        for d in out.iterdir():
-            if d.is_dir() and now.timestamp() - d.stat().st_mtime > KEEP_OUTPUT_DAYS * 86400:
-                shutil.rmtree(d, ignore_errors=True)
-                log(f"ménage : {d.name} supprimé")
+    for d in out.iterdir() if out.exists() else []:
+        if d.is_dir() and now.timestamp() - d.stat().st_mtime > KEEP_OUTPUT_DAYS * 86400:
+            shutil.rmtree(d, ignore_errors=True)
+            log(f"ménage : {d.name} supprimé")
     pub = Path(os.environ.get("PUBLIC_VIDEO_DIR", "/public"))
-    if pub.exists():
-        for f in pub.glob("*.mp4"):
-            if now.timestamp() - f.stat().st_mtime > KEEP_PUBLIC_DAYS * 86400:
-                f.unlink(missing_ok=True)
+    for f in pub.glob("*.mp4") if pub.exists() else []:
+        if now.timestamp() - f.stat().st_mtime > KEEP_PUBLIC_DAYS * 86400:
+            f.unlink(missing_ok=True)
+    trim_log()
 
 
 def run_step(day, label, extra_args):
     """Lance main.py pour ce jour, avec nouveaux essais. Renvoie True si tout a réussi."""
-    for attempt in range(1, RETRIES + 2):
-        log(f"{label} du {day} (essai {attempt})")
-        code = subprocess.call([sys.executable, str(ROOT / "main.py"), "--date", day, *extra_args], cwd=ROOT)
-        if code == 0:
-            log(f"{label} du {day} : terminé")
-            return True
-        log(f"{label} du {day} : échec (code {code})")
-        if attempt <= RETRIES:
-            log(f"nouvel essai dans {RETRY_WAIT // 60} min")
-            time.sleep(RETRY_WAIT)
-    return False
+    store.set_flag(day, "running")
+    try:
+        for attempt in range(1, RETRIES + 2):
+            log(f"{label} du {day} (essai {attempt})")
+            proc = subprocess.Popen([sys.executable, str(ROOT / "main.py"), "--date", day, *extra_args],
+                                    cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            for line in proc.stdout:
+                emit(line.rstrip("\n"))
+            code = proc.wait()
+            if code == 0:
+                log(f"{label} du {day} : terminé")
+                return True
+            log(f"{label} du {day} : échec (code {code})")
+            if attempt <= RETRIES and store.day_dir(day).exists():
+                log(f"nouvel essai dans {RETRY_WAIT // 60} min")
+                time.sleep(RETRY_WAIT)
+        return False
+    finally:
+        if store.day_dir(day).exists():
+            store.set_flag(day, "running", False)
 
 
 def writable():
@@ -80,54 +107,66 @@ def writable():
         probe.unlink()
         return True
     except OSError as e:
-        log(f"output/ n'est pas accessible en écriture ({e}). Sur le VPS : chown -R 1000:1000 state output public")
+        print(f"output/ n'est pas accessible en écriture ({e}). "
+              "Sur le VPS : chown -R 1000:1000 state output public", flush=True)
         return False
 
 
-def at(day_date, t):
-    return dt.datetime.combine(day_date, t, TZ)
+def at(day_date, hhmm):
+    return dt.datetime.combine(day_date, dt.time.fromisoformat(hhmm), TZ)
 
 
-def next_event(now):
-    times = [t for t in (GENERATE_AT, PUBLISH_AT) if t]
-    upcoming = [at(now.date() + dt.timedelta(days=d), t) for d in (0, 1) for t in times]
-    return min(x for x in upcoming if x > now)
+def tick():
+    """Une décision du planificateur. Renvoie True si une étape a été exécutée."""
+    s = store.get_settings()
+    now = dt.datetime.now(TZ)
+    day = now.date().isoformat()
+    has = lambda name: store.has_flag(day, name)  # noqa: E731
+
+    published = has("done") or has("failed")
+    generated = published or has("generated") or has("gen_tried")
+    gen_time, pub_time = at(now.date(), s["generate_at"]), at(now.date(), s["publish_at"])
+
+    if now >= gen_time and not generated and not has("rejected"):
+        cleanup(now)
+        ok = run_step(day, "création des vidéos", ["--no-publish"])
+        if store.day_dir(day).exists():  # l'admin a pu demander de tout refaire entre-temps
+            store.set_flag(day, "generated" if ok else "gen_tried")  # échec : la publication retentera
+        return True
+
+    if published or has("rejected"):
+        note(f"journée {day} terminée ; prochaine création : "
+             f"{at(now.date() + dt.timedelta(days=1), s['generate_at']):%Y-%m-%d %H:%M}")
+        return False
+
+    forced = has("publish_now")
+    if not forced and now < pub_time:
+        note(f"prochaine étape : {(gen_time if now < gen_time else pub_time):%Y-%m-%d %H:%M}")
+        return False
+    if s["require_approval"] and not (has("approved") or forced):
+        note(f"vidéos du {day} en attente de validation dans l'interface d'administration")
+        return False
+
+    if run_step(day, "publication", []):
+        store.set_flag(day, "done")
+    elif store.day_dir(day).exists():
+        log(f"abandon pour le {day} : relance depuis l'admin ou avec "
+            f"`docker compose exec shorts python main.py --date {day}`")
+        store.set_flag(day, "failed")
+    store.set_flag(day, "publish_now", False)
+    return True
 
 
 def main():
-    gen = f"création à {GENERATE_AT:%H:%M}, " if GENERATE_AT else ""
-    log(f"planificateur démarré : {gen}publication à {PUBLISH_AT:%H:%M} ({TZ.key})")
+    s = store.get_settings()
+    log(f"planificateur démarré : création à {s['generate_at']}, publication à {s['publish_at']} ({TZ.key})"
+        + (", validation exigée" if s["require_approval"] else ""))
     while True:
         if not writable():
             time.sleep(600)
             continue
-        now = dt.datetime.now(TZ)
-        day = now.date().isoformat()
-        published = flag(day, ".done").exists() or flag(day, ".failed").exists()
-        generated = published or flag(day, ".generated").exists() or flag(day, ".gen_tried").exists()
-
-        if GENERATE_AT and now >= at(now.date(), GENERATE_AT) and not generated:
-            cleanup(now)
-            ok = run_step(day, "création des vidéos", ["--no-publish"])
-            # en cas d'échec, l'étape de publication retentera la création
-            set_flag(day, ".generated" if ok else ".gen_tried")
-            continue
-
-        if now >= at(now.date(), PUBLISH_AT) and not published:
-            if not GENERATE_AT:
-                cleanup(now)
-            if run_step(day, "publication", []):
-                set_flag(day, ".done")
-            else:
-                log(f"abandon pour le {day} : relance à la main avec "
-                    f"`docker compose exec shorts python main.py --date {day}`")
-                set_flag(day, ".failed")
-            continue
-
-        nxt = next_event(now)
-        log(f"prochaine étape : {nxt:%Y-%m-%d %H:%M}")
-        # réveil au plus tard toutes les heures (changement d'heure, horloge ajustée…)
-        time.sleep(max(30, min(3600, (nxt - now).total_seconds())))
+        if not tick():
+            time.sleep(int(os.environ.get("TICK_SECONDS", 60)))
 
 
 if __name__ == "__main__":

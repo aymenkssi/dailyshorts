@@ -4,8 +4,9 @@ Daily Shorts se déploie comme Waselni : une pile **Docker Compose** derrière l
 
 | Conteneur | Rôle | Exposition |
 |---|---|---|
-| `dailyshorts-freellmapi` | routeur de LLM gratuits | `127.0.0.1:3001` seulement (tunnel SSH) |
+| `dailyshorts-freellmapi` | routeur de LLM gratuits | `llm.daily.creationapp.academy` (après connexion à l'admin) et `127.0.0.1:3001` |
 | `dailyshorts-pipeline` | crée chaque nuit à 1 h une vidéo longue (4 min) et un Short d'accroche, puis les publie à 16 h 47 (heure de Paris) (heure de Paris) | aucune |
+| `dailyshorts-admin` | interface d'administration sur `daily.creationapp.academy` | via Traefik, mot de passe |
 | `dailyshorts-media` | sert `https://aymendridi.com/shorts/*.mp4` pour Instagram | via Traefik |
 
 Les commandes se lancent sur le VPS, sauf les blocs marqués **(PC)**. `user@IP_VPS` = ton accès SSH.
@@ -248,6 +249,50 @@ Après quelques jours de relecture : `YOUTUBE_PRIVACY=public`, puis `docker comp
 
 ---
 
+## Interface d'administration
+
+Deux adresses, servies par Traefik :
+
+| Adresse | Contenu | Protection |
+|---|---|---|
+| `https://daily.creationapp.academy` | tableau de bord, vidéos, validation, file de sujets, réglages, statistiques, journal | mot de passe de l'admin |
+| `https://llm.daily.creationapp.academy` | tableau de bord FreeLLMAPI complet (clés des fournisseurs) | connexion à l'admin **puis** mot de passe FreeLLMAPI |
+
+### Mise en place
+
+1. **DNS** : crée deux enregistrements A vers l'adresse IP du VPS : `daily.creationapp.academy` et `llm.daily.creationapp.academy`. Vérifie avec `dig +short daily.creationapp.academy`.
+2. **Mot de passe** (12 caractères minimum, seule son empreinte est stockée) :
+
+   ```bash
+   cd /opt/dailyshorts
+   git pull
+   python3 tools/admin_password.py        # crée admin.env
+   ```
+
+3. **Démarrage** :
+
+   ```bash
+   docker compose up -d --build
+   docker compose ps                      # 4 conteneurs : freellmapi, shorts, admin, media
+   ```
+
+4. Ouvre `https://daily.creationapp.academy` (le certificat est obtenu au premier accès, compte quelques secondes).
+
+### Ce que pilote l'admin
+
+- **Réglages** : heures de création et de publication, durées, plateformes actives, visibilité YouTube, validation obligatoire, ligne éditoriale, voix. Ils sont enregistrés dans `state/settings.json`, pris en compte dans la minute, et **priment sur le `.env`**.
+- **Sujets** : file de sujets imposés ; file vide = l'IA choisit.
+- **Validation** : si elle est exigée, les vidéos créées la nuit attendent ton approbation ; sans approbation le jour même, rien n'est publié. Boutons : Approuver, Publier maintenant, Refuser, Refaire.
+- **Statistiques** : YouTube demande de refaire une fois l'autorisation avec le droit de lecture (`tools/youtube_auth.py` sur ton PC, puis recopie de `youtube_token.json`). TikTok demande le scope `user.info.stats` dans ton appli TikTok. Instagram s'affiche dès que le compte est connecté.
+
+### Sécurité
+
+- Changer le mot de passe : relance `python3 tools/admin_password.py` puis `docker compose up -d admin`.
+- 5 mots de passe faux bloquent l'adresse IP pendant 15 minutes ; la session dure 12 heures.
+- FreeLLMAPI en ligne expose l'outil qui détient tes clés de fournisseurs : garde un mot de passe FreeLLMAPI différent de celui de l'admin. Pour le retirer d'Internet, supprime le bloc `labels` du service `freellmapi` dans `docker-compose.yml` ; le tunnel SSH (`ssh -L 3001:127.0.0.1:3001 …`) continue de fonctionner.
+
+---
+
 ## Entretien
 
 | Action | Commande (dans `/opt/dailyshorts`) |
@@ -255,7 +300,7 @@ Après quelques jours de relecture : `YOUTUBE_PRIVACY=public`, puis `docker comp
 | Suivre le pipeline | `docker compose logs -f shorts` |
 | État des conteneurs | `docker compose ps` |
 | Relancer un jour | `docker compose exec shorts python main.py --date AAAA-MM-JJ` |
-| Changer les heures | `GENERATE_AT` / `PUBLISH_AT` dans `.env`, puis `docker compose up -d shorts` |
+| Changer les heures, les plateformes, la voix | page **Réglages** de l'admin |
 | Mettre en pause | `docker compose stop shorts` |
 | Mettre à jour le pipeline | `git pull && docker compose up -d --build shorts` |
 | Mettre à jour FreeLLMAPI | `docker compose pull freellmapi && docker compose up -d freellmapi` |

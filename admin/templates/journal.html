@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Journal{% endblock %}
+{% block body %}
+<h1>Journal</h1>
+<p class="mute small">400 dernières lignes du planificateur et du pipeline. Recharge la page pour actualiser.</p>
+<pre class="log">{% for l in log %}{{ l }}
+{% else %}Aucune activité enregistrée.{% endfor %}</pre>
+{% endblock %}

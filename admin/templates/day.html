@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% import "_macros.html" as m %}
+{% block title %}{{ d.day }}{% endblock %}
+{% block body %}
+<p class="small"><a href="/videos">← Toutes les vidéos</a></p>
+<h1>{{ d.day }} {{ m.state(d.state) }}</h1>
+{% if d.title %}<p><b>{{ d.title }}</b><br><span class="mute small">Sujet : {{ d.topic }}</span></p>{% endif %}
+<div class="card" style="margin-bottom:16px">
+  {% if d.videos.long or d.videos.short %}<div class="players">
+    <div>{% if d.videos.long %}<video controls preload="metadata" src="/media/{{ d.day }}/long.mp4"></video><p class="hint">Vidéo longue</p>{% endif %}</div>
+    <div>{% if d.videos.short %}<video controls preload="metadata" src="/media/{{ d.day }}/short.mp4"></video><p class="hint">Short d'accroche</p>{% endif %}</div>
+  </div>{% else %}<p class="mute">Pas de vidéo créée pour cette journée.</p>{% endif %}
+  {% if is_today %}{{ m.day_actions(d, csrf, s.require_approval) }}{% endif %}
+  {% if not is_today or d.flags.done %}<div class="actions">{{ m.post('/videos/' ~ d.day ~ '/delete', 'Supprimer les fichiers de cette journée', csrf, 'danger', 'Supprimer les fichiers du serveur ? Les vidéos déjà publiées restent en ligne.') }}</div>{% endif %}
+</div>
+{% if d.published %}<div class="card" style="margin-bottom:16px"><h2>Publications</h2><table>
+{% for k, v in d.published.items() %}<tr><td>{{ k }}</td><td>{% if v.startswith('OK http') %}<a href="{{ v[3:] }}" target="_blank" rel="noopener">{{ v[3:] }}</a>{% else %}{{ v }}{% endif %}</td></tr>{% endfor %}
+</table></div>{% endif %}
+{% for kind, label in (('long', 'Script de la vidéo longue'), ('short', 'Script du Short')) %}{% if d.scripts.get(kind) %}
+<div class="card script" style="margin-bottom:16px"><h2>{{ label }}</h2>
+<p class="mute small">{{ d.scripts[kind].title }} — {{ d.scripts[kind].scenes|length }} plans</p>
+{% for sc in d.scripts[kind].scenes %}<p>{{ sc.narration }}</p>{% endfor %}</div>
+{% endif %}{% endfor %}
+{% endblock %}

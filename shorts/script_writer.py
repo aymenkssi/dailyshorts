@@ -102,9 +102,17 @@ WRITER = (
 )
 
 
-def write_long(past_topics, seconds=240):
-    """Vidéo longue horizontale : récit complet (~150 mots/min)."""
+def write_long(past_topics, seconds=240, topic=None, niche=""):
+    """Vidéo longue horizontale : récit complet (~150 mots/min).
+    topic : sujet imposé (file de l'admin) ; niche : ligne éditoriale de la chaîne."""
     words = int(seconds * 2.5)
+    if topic:
+        subject = f"- Topic (imposed by the channel owner, do not change it): {topic}"
+    else:
+        subject = ("- Topic must be different from these already published topics: "
+                   + json.dumps(past_topics[-300:]))
+    if niche:
+        subject += f"\n- Channel editorial line to respect: {niche}"
     user = f"""Write today's long-form video (horizontal, about {seconds // 60} minutes) in English.
 
 Constraints:
@@ -116,7 +124,7 @@ Constraints:
 - {words // 12} to {words // 9} scenes; each scene's narration is 8-16 words and is one continuous visual shot.
 - Concatenating all scene narrations must give the full script, in order.
 - image_prompt: concrete subject, setting, action, wide framing. Describe recurring characters identically every time.
-- Topic must be different from these already published topics: {json.dumps(past_topics[-300:])}
+{subject}
 
 {SCHEMA_HINT}"""
     return _call(WRITER, user, max_tokens=14000, min_words=int(words * 0.75))

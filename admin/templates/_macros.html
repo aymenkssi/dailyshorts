@@ -1,0 +1,25 @@
+{% macro state(st) -%}
+{%- set cls = {'publiée':'ok','approuvée':'ok','prête':'warn','en cours':'','à créer':'','refusée':'bad','échec':'bad','création échouée':'bad'}[st] -%}
+<span class="pill {{ cls }}">{{ st }}</span>
+{%- endmacro %}
+
+{% macro post(action, label, csrf, cls='', confirm='') -%}
+<form method="post" action="{{ action }}"{% if confirm %} data-confirm="{{ confirm }}"{% endif %}>
+<input type="hidden" name="csrf" value="{{ csrf }}"><button class="{{ cls }}">{{ label }}</button></form>
+{%- endmacro %}
+
+{% macro day_actions(d, csrf, require_approval) -%}
+<div class="actions">
+{% if d.flags.running %}<span class="mute">Création ou publication en cours…</span>
+{% else %}
+  {% if d.videos.long and d.videos.short and not d.flags.done %}
+    {% if require_approval and not d.flags.approved %}{{ post('/videos/' ~ d.day ~ '/approve', 'Approuver', csrf, 'primary') }}{% endif %}
+    {{ post('/videos/' ~ d.day ~ '/publish_now', 'Publier maintenant', csrf, '', 'Publier tout de suite sur les plateformes activées ?') }}
+    {% if not d.flags.rejected %}{{ post('/videos/' ~ d.day ~ '/reject', 'Refuser', csrf, 'danger', 'Ne rien publier aujourd’hui ?') }}{% endif %}
+  {% endif %}
+  {% if not d.flags.done %}{{ post('/videos/' ~ d.day ~ '/redo', 'Refaire les vidéos', csrf, '', 'Supprimer ces vidéos et en créer de nouvelles ? Cela consomme le quota d’images du jour.') }}{% endif %}
+{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro n(v) -%}{{ '{:,}'.format(v).replace(',', ' ') if v is number else v }}{%- endmacro %}

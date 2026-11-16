@@ -1,0 +1,47 @@
+{% extends "base.html" %}{% import "_macros.html" as m %}
+{% block title %}Tableau de bord{% endblock %}
+{% block body %}
+<h1>Tableau de bord</h1>
+<div class="card" style="margin-bottom:16px">
+  <h2>Aujourd'hui — {{ today.day }} {{ m.state(today.state) }}</h2>
+  {% if today.title %}<p><b>{{ today.title }}</b><br><span class="mute small">Sujet : {{ today.topic }}</span></p>
+  {% else %}<p class="mute">Les vidéos du jour ne sont pas encore créées (création prévue à {{ s.generate_at }}).</p>{% endif %}
+  {% if today.videos.long or today.videos.short %}
+  <div class="players">
+    <div>{% if today.videos.long %}<video controls preload="metadata" src="/media/{{ today.day }}/long.mp4"></video><p class="hint">Vidéo longue</p>{% endif %}</div>
+    <div>{% if today.videos.short %}<video controls preload="metadata" src="/media/{{ today.day }}/short.mp4"></video><p class="hint">Short d'accroche</p>{% endif %}</div>
+  </div>{% endif %}
+  {% if s.require_approval and today.state == 'prête' %}<p><b>En attente de ta validation</b> : rien ne sera publié tant que tu n'approuves pas.</p>{% endif %}
+  {{ m.day_actions(today, csrf, s.require_approval) }}
+</div>
+<div class="grid">
+  <div class="card"><h2>Programmation</h2>
+    <div class="kpis">
+      <div class="kpi"><span>Création</span><b>{{ s.generate_at }}</b></div>
+      <div class="kpi"><span>Publication</span><b>{{ s.publish_at }}</b></div>
+      <div class="kpi"><span>Validation</span><b>{{ 'exigée' if s.require_approval else 'non' }}</b></div>
+    </div>
+    <p class="small" style="margin-top:12px">Plateformes :
+      <span class="pill {{ 'ok' if s.publish_youtube }}">YouTube {{ 'activé' if s.publish_youtube else 'coupé' }}</span>
+      <span class="pill {{ 'ok' if s.publish_instagram }}">Instagram {{ 'activé' if s.publish_instagram else 'coupé' }}</span>
+      <span class="pill {{ 'ok' if s.publish_tiktok }}">TikTok {{ 'activé' if s.publish_tiktok else 'coupé' }}</span></p>
+    <p class="small mute">Heure de Paris. YouTube publie en « {{ s.youtube_privacy }} ». <a href="/reglages">Modifier</a></p>
+  </div>
+  <div class="card"><h2>Prochains sujets</h2>
+    {% if topics %}<ol style="margin:0;padding-left:20px">{% for t in topics[:5] %}<li>{{ t.topic }}</li>{% endfor %}</ol>
+    {% if topics|length > 5 %}<p class="mute small">… et {{ topics|length - 5 }} autre(s)</p>{% endif %}
+    {% else %}<p class="mute">File vide : l'IA choisit le sujet.</p>{% endif %}
+    <p class="small"><a href="/sujets">Gérer la file</a></p>
+  </div>
+</div>
+<div class="card" style="margin-top:16px"><h2>Derniers jours</h2>
+  {% if recent %}<div class="scroll"><table><tr><th>Date</th><th>Titre</th><th>État</th></tr>
+  {% for d in recent %}<tr><td><a href="/videos/{{ d.day }}">{{ d.day }}</a></td><td>{{ d.title or '—' }}</td><td>{{ m.state(d.state) }}</td></tr>{% endfor %}
+  </table></div>{% else %}<p class="mute">Aucune vidéo pour l'instant.</p>{% endif %}
+</div>
+<div class="card" style="margin-top:16px"><h2>Activité récente</h2>
+  <pre class="log">{% for l in log %}{{ l }}
+{% else %}Aucune activité enregistrée.{% endfor %}</pre>
+  <p class="small"><a href="/journal">Journal complet</a></p>
+</div>
+{% endblock %}

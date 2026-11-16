@@ -17,7 +17,7 @@ Coût : 0 €. Le quota gratuit Cloudflare (10 000 « neurons »/jour) couvre le
 
 ## Déploiement
 
-Docker Compose derrière Traefik, comme Waselni : `freellmapi` (local uniquement), `shorts` (planificateur interne : création à `GENERATE_AT`, publication à `PUBLISH_AT`, heure de Paris) et `media` (sert `/shorts/*.mp4` pour Instagram).
+Docker Compose derrière Traefik, comme Waselni : `freellmapi` (local uniquement), `shorts` (planificateur interne : création à `GENERATE_AT`, publication à `PUBLISH_AT`, heure de Paris) `admin` (interface d'administration sur `daily.creationapp.academy` : réglages, file de sujets, validation avant publication, historique, statistiques, journal) et `media` (sert `/shorts/*.mp4` pour Instagram).
 
 ## Commandes
 
@@ -35,5 +35,5 @@ docker compose exec shorts python main.py --date 2026-11-12   # reprendre un jou
 - **Instagram** : via l'API, seules les vidéos de 5 à 90 s vont dans l'onglet Reels : garde `SHORT_SECONDS` sous 90.
 - **YouTube** : Shorts jusqu'à 3 min ; vidéo marquée « contenu synthétique ». Démarre en `YOUTUBE_PRIVACY=private` pour relire.
 - **Exactitude** : même avec `fusion`, des erreurs restent possibles ; les textes sont dans `output/<date>/scripts.json`.
-- **FreeLLMAPI** : projet tiers prévu pour un usage personnel ; les conditions de chaque fournisseur s'appliquent. Il doit rester accessible uniquement en local (127.0.0.1:3001).
+- **FreeLLMAPI** : projet tiers prévu pour un usage personnel ; les conditions de chaque fournisseur s'appliquent. Son tableau de bord est publié sur un sous-domaine, accessible seulement après connexion à l'admin, puis avec son propre mot de passe.
 - **Personnaliser** : style visuel → `STYLE` dans `shorts/script_writer.py` ; sous-titres → haut de `shorts/editing.py` ; voix → `KOKORO_VOICE` ; modèles → `.env`.

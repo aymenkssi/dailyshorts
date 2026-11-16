@@ -10,13 +10,26 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
-    # Tableau de bord accessible uniquement depuis le VPS (tunnel SSH) : jamais via Traefik
+      TRUST_PROXY: 1          # un seul proxy devant : Traefik
+    # Accès local (tunnel SSH), en secours si l'admin est indisponible
     ports:
       - "127.0.0.1:${FREELLMAPI_PORT:-3001}:3001"
     volumes:
       - freellmapi_data:/app/server/data
     networks:
       - internal
+      - web
+    # Tableau de bord publié sur LLM_DOMAIN, mais Traefik demande d'abord à l'admin si le
+    # visiteur est connecté (forwardAuth) ; FreeLLMAPI garde ensuite son propre mot de passe.
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=web
+      - traefik.http.routers.dailyshorts-llm.rule=Host(`${LLM_DOMAIN:-llm.daily.creationapp.academy}`)
+      - traefik.http.routers.dailyshorts-llm.entrypoints=websecure
+      - traefik.http.routers.dailyshorts-llm.tls.certresolver=letsencrypt
+      - traefik.http.routers.dailyshorts-llm.middlewares=dailyshorts-admin-auth
+      - traefik.http.middlewares.dailyshorts-admin-auth.forwardauth.address=http://dailyshorts-admin:8000/auth/check
+      - traefik.http.services.dailyshorts-llm.loadbalancer.server.port=3001
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/ping').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s
@@ -44,6 +57,35 @@ services:
         condition: service_healthy
     networks:
       - internal
+
+  # Interface d'administration : réglages, sujets, validation, historique, statistiques
+  admin:
+    build:
+      context: .
+      dockerfile: admin/Dockerfile
+    container_name: dailyshorts-admin
+    restart: always
+    env_file:
+      - ./admin.env            # ADMIN_PASSWORD_HASH et SESSION_SECRET (tools/admin_password.py)
+    environment:
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-daily.creationapp.academy}
+      LLM_DOMAIN: ${LLM_DOMAIN:-llm.daily.creationapp.academy}
+      # uniquement ce qu'il faut pour lire les statistiques (pas les clés de génération)
+      IG_USER_ID: ${IG_USER_ID:-}
+      IG_ACCESS_TOKEN: ${IG_ACCESS_TOKEN:-}
+      IG_GRAPH_VERSION: ${IG_GRAPH_VERSION:-v23.0}
+    volumes:
+      - ./state:/app/state
+      - ./output:/app/output
+    networks:
+      - web
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=web
+      - traefik.http.routers.dailyshorts-admin.rule=Host(`${ADMIN_DOMAIN:-daily.creationapp.academy}`)
+      - traefik.http.routers.dailyshorts-admin.entrypoints=websecure
+      - traefik.http.routers.dailyshorts-admin.tls.certresolver=letsencrypt
+      - traefik.http.services.dailyshorts-admin.loadbalancer.server.port=8000
 
   # Sert /shorts/*.mp4 pour qu'Instagram puisse télécharger la vidéo du jour
   media:

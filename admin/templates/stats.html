@@ -1,0 +1,43 @@
+{% extends "base.html" %}{% import "_macros.html" as m %}
+{% block title %}Statistiques{% endblock %}
+{% block body %}
+<h1>Statistiques</h1>
+<p class="mute small">Chiffres mis à jour au plus toutes les 15 minutes.</p>
+<div class="grid">
+<div class="card"><h2>YouTube</h2>
+  {% if yt.error %}<p><span class="pill warn">indisponible</span></p><p class="small">{{ yt.error }}</p>
+  {% else %}<p class="mute small">{{ yt.name }}</p><div class="kpis">
+    <div class="kpi"><span>Abonnés</span><b>{{ m.n(yt.subscribers) }}</b></div>
+    <div class="kpi"><span>Vues</span><b>{{ m.n(yt.views) }}</b></div>
+    <div class="kpi"><span>Vidéos</span><b>{{ m.n(yt.videos) }}</b></div></div>{% endif %}
+</div>
+<div class="card"><h2>Instagram</h2>
+  {% if ig.error %}<p><span class="pill warn">{{ 'non connecté' if ig.error == 'non connecté' else 'indisponible' }}</span></p>{% if ig.error != 'non connecté' %}<p class="small">{{ ig.error }}</p>{% endif %}
+  {% else %}<p class="mute small">@{{ ig.name }}</p><div class="kpis">
+    <div class="kpi"><span>Abonnés</span><b>{{ m.n(ig.followers) }}</b></div>
+    <div class="kpi"><span>Publications</span><b>{{ m.n(ig.media) }}</b></div></div>{% endif %}
+</div>
+<div class="card"><h2>TikTok</h2>
+  {% if tt.error %}<p><span class="pill warn">{{ 'non connecté' if tt.error == 'non connecté' else 'indisponible' }}</span></p>{% if tt.error != 'non connecté' %}<p class="small">{{ tt.error }}</p>{% endif %}
+  {% else %}<p class="mute small">{{ tt.name }}</p><div class="kpis">
+    <div class="kpi"><span>Abonnés</span><b>{{ m.n(tt.followers) }}</b></div>
+    <div class="kpi"><span>J'aime</span><b>{{ m.n(tt.likes) }}</b></div>
+    <div class="kpi"><span>Vidéos</span><b>{{ m.n(tt.videos) }}</b></div></div>{% endif %}
+</div>
+</div>
+<div class="card" style="margin-top:16px"><h2>YouTube — vidéos des 30 derniers jours</h2>
+{% if rows and not yt.error %}<div class="scroll"><table>
+<tr><th>Date</th><th>Titre</th><th>Format</th><th class="num">Vues</th><th class="num">J'aime</th><th class="num">Commentaires</th><th>Visibilité</th></tr>
+{% for r in rows %}{% for kind, vid in (('Longue', r.long), ('Short', r.short)) %}{% if vid %}{% set v = yt.per_video.get(vid) %}
+<tr><td>{{ r.day }}</td><td><a href="https://youtu.be/{{ vid }}" target="_blank" rel="noopener">{{ r.title or vid }}</a></td><td>{{ kind }}</td>
+{% if v %}<td class="num">{{ m.n(v.views) }}</td><td class="num">{{ m.n(v.likes) }}</td><td class="num">{{ m.n(v.comments) }}</td><td>{{ v.privacy }}</td>
+{% else %}<td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="mute">introuvable</td>{% endif %}</tr>
+{% endif %}{% endfor %}{% endfor %}</table></div>
+{% elif yt.error %}<p class="mute">Disponible une fois YouTube connecté en lecture.</p>
+{% else %}<p class="mute">Aucune vidéo publiée sur YouTube pour l'instant.</p>{% endif %}
+</div>
+{% if not ig.error and ig.recent %}<div class="card" style="margin-top:16px"><h2>Instagram — dernières publications</h2><div class="scroll"><table>
+<tr><th>Date</th><th>Titre</th><th class="num">J'aime</th><th class="num">Commentaires</th></tr>
+{% for r in ig.recent %}<tr><td>{{ r.date }}</td><td><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.title or 'voir' }}</a></td><td class="num">{{ m.n(r.likes) }}</td><td class="num">{{ m.n(r.comments) }}</td></tr>{% endfor %}
+</table></div></div>{% endif %}
+{% endblock %}

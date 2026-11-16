@@ -19,8 +19,10 @@ ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 sys.path.insert(0, str(ROOT))
 
-from shorts import editing, media_gen, script_writer  # noqa: E402
+from shorts import editing, media_gen, script_writer, store  # noqa: E402
 from publish import platforms  # noqa: E402
+
+store.apply_env()  # les réglages enregistrés depuis l'admin priment sur le .env
 
 HISTORY = ROOT / "state" / "history.json"
 FORMATS = {
@@ -74,11 +76,18 @@ def main():
         scripts = json.loads(script_file.read_text())
     else:
         print("Scripts…")
+        queue = store.get_topics()  # sujets de la file de l'admin, sinon l'IA choisit
+        imposed = queue[0]["topic"] if queue else None
+        if imposed:
+            print(f"Sujet imposé : {imposed}")
         long_script = script_writer.fact_check(script_writer.write_long(
-            [h["topic"] for h in history], seconds=int(os.environ.get("LONG_SECONDS", 240))))
+            [h["topic"] for h in history], seconds=int(os.environ.get("LONG_SECONDS", 240)),
+            topic=imposed, niche=os.environ.get("CHANNEL_NICHE", "")))
         teaser = script_writer.write_teaser(long_script, seconds=int(os.environ.get("SHORT_SECONDS", 40)))
         scripts = {"long": long_script, "short": teaser}
         script_file.write_text(json.dumps(scripts, indent=2, ensure_ascii=False))
+        if imposed:
+            store.pop_topic()  # retiré de la file seulement une fois le script écrit
     print(f"Sujet : {scripts['long']['topic']}")
 
     # 2. Production des deux vidéos
