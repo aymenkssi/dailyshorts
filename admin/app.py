@@ -8,6 +8,7 @@ import datetime as dt
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import shutil
 import sys
@@ -35,6 +36,10 @@ SECRET = os.environ.get("SESSION_SECRET", "").encode()
 PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH", "")
 SESSION_HOURS = 12
 COOKIE = "ds_session"
+CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "")
+CHANNEL_NAME = os.environ.get("CHANNEL_NAME", "Forgotten Chapters")
+# fichiers de vérification de domaine demandés par TikTok ou Google (déposés dans state/verify/)
+VERIFY_RE = re.compile(r"^/(tiktok[\w-]{4,80}\.txt|google[\w-]{4,80}\.html)$")
 
 app = FastAPI(title="Daily Shorts", docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
@@ -92,7 +97,8 @@ def too_many_failures(ip):
 @app.middleware("http")
 async def guard(request: Request, call_next):
     path = request.url.path
-    public = path in ("/login", "/auth/check", "/healthz") or path.startswith("/static/")
+    public = (path in ("/login", "/auth/check", "/healthz", "/terms", "/privacy")
+              or path.startswith("/static/") or VERIFY_RE.match(path))
     if not public and not valid_session(request.cookies.get(COOKIE)):
         return RedirectResponse(f"/login?next={quote(path)}", status_code=303)
     if not public and request.method == "POST":
@@ -181,6 +187,19 @@ def auth_check(request: Request):
         return Response("Connexion à l'administration requise", status_code=401)
     target = safe_next(f"https://{host}{uri}")
     return RedirectResponse(f"https://{ADMIN_DOMAIN}/login?next={quote(target, safe='')}", status_code=302)
+
+
+# ---------------- Pages publiques (exigées par TikTok et Google pour valider une appli) ----------------
+@app.get("/terms", response_class=HTMLResponse)
+def terms(request: Request):
+    return templates.TemplateResponse(request, "legal.html", {
+        "kind": "terms", "channel": CHANNEL_NAME, "email": CONTACT_EMAIL, "domain": ADMIN_DOMAIN})
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy(request: Request):
+    return templates.TemplateResponse(request, "legal.html", {
+        "kind": "privacy", "channel": CHANNEL_NAME, "email": CONTACT_EMAIL, "domain": ADMIN_DOMAIN})
 
 
 # ---------------- Pages ----------------
@@ -315,3 +334,14 @@ def stats_page(request: Request):
 @app.get("/journal", response_class=HTMLResponse)
 def journal(request: Request):
     return page(request, "journal", log=log_tail(400))
+
+
+# Déclarée en dernier : cette route attrape tout chemin à un seul segment
+@app.get("/{name}", include_in_schema=False)
+def verification_file(name: str):
+    if not VERIFY_RE.match("/" + name):
+        raise HTTPException(404)
+    f = store.STATE / "verify" / name
+    if not f.is_file():
+        raise HTTPException(404)
+    return FileResponse(f, media_type="text/html" if name.endswith(".html") else "text/plain")

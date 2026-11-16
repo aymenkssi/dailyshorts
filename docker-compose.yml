@@ -70,6 +70,8 @@ services:
     environment:
       ADMIN_DOMAIN: ${ADMIN_DOMAIN:-daily.creationapp.academy}
       LLM_DOMAIN: ${LLM_DOMAIN:-llm.daily.creationapp.academy}
+      CHANNEL_NAME: ${CHANNEL_NAME:-Forgotten Chapters}
+      CONTACT_EMAIL: ${CONTACT_EMAIL:-}        # affiché sur les pages /terms et /privacy
       # uniquement ce qu'il faut pour lire les statistiques (pas les clés de génération)
       IG_USER_ID: ${IG_USER_ID:-}
       IG_ACCESS_TOKEN: ${IG_ACCESS_TOKEN:-}
