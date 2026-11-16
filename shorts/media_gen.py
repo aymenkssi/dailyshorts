@@ -2,6 +2,8 @@
 import base64
 import json
 import os
+import re
+import shutil
 import time
 from pathlib import Path
 
@@ -20,6 +22,27 @@ def _retry(fn, tries=3, wait=10):
 
 
 # ---------- Images ----------
+def _check(r):
+    """Comme raise_for_status, mais avec le détail renvoyé par le service (utile pour les 400)."""
+    if not r.ok:
+        raise RuntimeError(f"{r.status_code} {r.reason} : {r.text[:300]}")
+
+
+# Mots qui font souvent refuser un prompt par les filtres de contenu des générateurs d'images
+_RISKY = re.compile(
+    r"\b(blood\w*|bleed\w*|gore|gory|sacrific\w*|kill\w*|murder\w*|dead|death|dying|corpse\w*|skull\w*|"
+    r"behead\w*|decapitat\w*|execut\w*|tortur\w*|slaughter\w*|massacre\w*|wound\w*|stab\w*|"
+    r"naked|nude|nudity|topless|bare[- ]chested|loincloth\w*|slave\w*|whip\w*|weapon\w*|sword\w*|"
+    r"spear\w*|dagger\w*|knife|knives|battle\w*|war|warrior\w*|violen\w*|drug\w*|opium|plague|disease\w*)\b",
+    re.I)
+
+
+def _soften(prompt):
+    """Version adoucie d'un prompt refusé : mots sensibles retirés, cadrage familial."""
+    cleaned = re.sub(r"\s{2,}", " ", _RISKY.sub("", prompt)).strip(" ,.")
+    return "Peaceful, family-friendly illustration, fully clothed people. " + cleaned
+
+
 def _cf_image(prompt, seed):
     acc, tok = os.environ["CF_ACCOUNT_ID"], os.environ["CF_API_TOKEN"]
     model = os.environ.get("CF_IMAGE_MODEL", "@cf/black-forest-labs/flux-2-klein-4b")
@@ -30,7 +53,7 @@ def _cf_image(prompt, seed):
         r = requests.post(url, headers=headers, files={k: (None, v) for k, v in fields.items()}, timeout=180)
     else:  # flux-1-schnell : JSON, image carrée recadrée ensuite
         r = requests.post(url, headers=headers, json={"prompt": prompt[:2000], "steps": 8, "seed": seed}, timeout=180)
-    r.raise_for_status()
+    _check(r)
     if r.headers.get("content-type", "").startswith("image/"):
         return r.content
     data = r.json()
@@ -50,7 +73,7 @@ def _freellmapi_image(prompt, seed=None):
               "n": 1, "size": "768x1344", "response_format": "b64_json"},
         timeout=300,
     )
-    r.raise_for_status()
+    _check(r)
     item = r.json()["data"][0]
     if item.get("b64_json"):
         return base64.b64decode(item["b64_json"])
@@ -71,28 +94,43 @@ def _image_sources():
 
 
 def generate_images(prompts, out_dir):
+    """Une image par scène. Si un prompt est refusé : version adoucie, puis en dernier
+    recours réutilisation de l'image voisine, pour ne jamais bloquer toute la vidéo."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     sources = _image_sources()
-    paths = []
+    paths, missing = [], []
     for i, prompt in enumerate(prompts):
         dest = out_dir / f"scene_{i:02d}.jpg"
-        if not dest.exists():
-            err = None
+        paths.append(dest)
+        if dest.exists():
+            continue
+        done = False
+        for label, text in (("", prompt), (" (prompt adouci)", _soften(prompt))):
             for name, fn in list(sources):
                 try:
-                    dest.write_bytes(_retry(lambda: fn(prompt, 1000 + i), tries=2, wait=5))
-                    print(f"  image {i + 1}/{len(prompts)} ok ({name})")
+                    dest.write_bytes(_retry(lambda: fn(text, 1000 + i), tries=2, wait=5))
+                    print(f"  image {i + 1}/{len(prompts)} ok ({name}{label})")
+                    done = True
                     break
                 except Exception as e:  # noqa: BLE001
-                    err = e
-                    print(f"  {name} indisponible pour l'image {i + 1} : {str(e)[:200]}")
+                    print(f"  {name} : échec pour l'image {i + 1}{label} : {str(e)[:300]}")
                     # quota Cloudflare épuisé : inutile de le retenter pour les images suivantes
                     if name == "cloudflare" and "429" in str(e) and len(sources) > 1:
                         sources.remove((name, fn))
-            else:
-                raise RuntimeError(f"Image {i + 1} impossible à générer : {err}")
-        paths.append(dest)
+            if done:
+                break
+        if not done:
+            missing.append(i)
+
+    if len(missing) > max(3, len(prompts) // 4):
+        raise RuntimeError(f"{len(missing)} images sur {len(prompts)} impossibles à générer : arrêt")
+    for i in missing:  # image voisine la plus proche déjà générée
+        near = sorted((j for j in range(len(prompts)) if paths[j].exists()), key=lambda j: abs(j - i))
+        if not near:
+            raise RuntimeError("Aucune image générée")
+        shutil.copy(paths[near[0]], paths[i])
+        print(f"  image {i + 1} remplacée par l'image {near[0] + 1}")
     return paths
 
 

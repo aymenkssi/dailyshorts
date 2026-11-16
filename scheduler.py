@@ -67,9 +67,26 @@ def next_run(now):
     return today_run if now < today_run else today_run + dt.timedelta(days=1)
 
 
+def writable():
+    """Vérifie que le dossier output/ est accessible en écriture (droits du volume monté)."""
+    try:
+        out = ROOT / "output"
+        out.mkdir(exist_ok=True)
+        probe = out / ".write_test"
+        probe.touch()
+        probe.unlink()
+        return True
+    except OSError as e:
+        log(f"output/ n'est pas accessible en écriture ({e}). Sur le VPS : chown -R 1000:1000 state output public")
+        return False
+
+
 def main():
     log(f"planificateur démarré : chaque jour à {RUN_AT:%H:%M} ({TZ.key})")
     while True:
+        if not writable():
+            time.sleep(600)
+            continue
         now = dt.datetime.now(TZ)
         day = now.date().isoformat()
         due = now >= dt.datetime.combine(now.date(), RUN_AT, TZ)
