@@ -160,20 +160,43 @@ def _tiktok_token():
     return tok["access_token"]
 
 
-def _tiktok_upload(h, init_url, body, video):
-    """Initialise l'envoi, transfère le fichier en un bloc, renvoie le publish_id."""
+TT_CHUNK = 10 * 1024 * 1024   # morceaux de 10 Mo (TikTok : entre 5 et 64 Mo, le dernier absorbe le reste)
+
+
+def _tiktok_upload(h, init_url, body, video, attempts=3):
+    """Initialise l'envoi, transfère le fichier par morceaux, renvoie le publish_id.
+    En cas d'erreur serveur de TikTok, recommence l'envoi complet (nouvelle initialisation)."""
     size = Path(video).stat().st_size
-    body["source_info"] = {"source": "FILE_UPLOAD", "video_size": size, "chunk_size": size, "total_chunk_count": 1}
-    init = requests.post(init_url, headers=h, timeout=60, json=body).json()
-    if init.get("error", {}).get("code") not in (None, "ok"):
-        raise RuntimeError(f"TikTok init : {init['error']}")
-    data = init["data"]
-    with open(video, "rb") as fh:
-        up = requests.put(data["upload_url"], data=fh.read(), timeout=600, headers={
-            "Content-Type": "video/mp4", "Content-Length": str(size),
-            "Content-Range": f"bytes 0-{size - 1}/{size}"})
-    up.raise_for_status()
-    return data["publish_id"]
+    chunk = size if size < 2 * TT_CHUNK else TT_CHUNK
+    count = max(1, size // chunk)
+    last_err = None
+    for attempt in range(1, attempts + 1):
+        b = dict(body)
+        b["source_info"] = {"source": "FILE_UPLOAD", "video_size": size, "chunk_size": chunk,
+                            "total_chunk_count": count}
+        init = requests.post(init_url, headers=h, timeout=60, json=b).json()
+        if init.get("error", {}).get("code") not in (None, "ok"):
+            raise RuntimeError(f"TikTok init : {init['error']}")
+        data = init["data"]
+        try:
+            with open(video, "rb") as fh:
+                for i in range(count):
+                    start = i * chunk
+                    end = size - 1 if i == count - 1 else start + chunk - 1   # le dernier morceau prend le reste
+                    fh.seek(start)
+                    part = fh.read(end - start + 1)
+                    up = requests.put(data["upload_url"], data=part, timeout=600, headers={
+                        "Content-Type": "video/mp4", "Content-Length": str(len(part)),
+                        "Content-Range": f"bytes {start}-{end}/{size}"})
+                    if up.status_code >= 400:
+                        raise RuntimeError(f"envoi du morceau {i + 1}/{count} : HTTP {up.status_code} "
+                                           f"{up.text[:300]}")
+            return data["publish_id"]
+        except (RuntimeError, requests.RequestException) as e:
+            last_err = e
+            print(f"  TikTok : échec de l'envoi (essai {attempt}/{attempts}) — {e}")
+            time.sleep(20 * attempt)
+    raise RuntimeError(f"TikTok : envoi impossible après {attempts} essais — {last_err}")
 
 
 def _tiktok_status(h, publish_id, done):
