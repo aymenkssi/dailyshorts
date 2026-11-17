@@ -17,6 +17,12 @@
   <label class="check"><input type="checkbox" name="publish_youtube" {{ 'checked' if s.publish_youtube }}> YouTube (vidéo longue + Short)</label>
   <label class="check"><input type="checkbox" name="publish_instagram" {{ 'checked' if s.publish_instagram }}> Instagram (Short)</label>
   <label class="check"><input type="checkbox" name="publish_tiktok" {{ 'checked' if s.publish_tiktok }}> TikTok (Short)</label>
+  <label for="tm">Mode TikTok</label>
+  <select id="tm" name="tiktok_mode">
+    <option value="inbox" {{ 'selected' if s.tiktok_mode == 'inbox' }}>Brouillon dans ma boîte TikTok (je publie depuis l'appli)</option>
+    <option value="direct" {{ 'selected' if s.tiktok_mode == 'direct' }}>Publication directe (appli validée par TikTok requise)</option>
+  </select>
+  <p class="hint">Sans validation de l'appli par TikTok, la publication directe n'est acceptée que sur un compte privé et reste visible par toi seul. TikTok limite à 5 brouillons en attente par 24 h : publie ou supprime-les chaque jour.</p>
   <label class="check"><input type="checkbox" name="long_to_social" {{ 'checked' if s.long_to_social }}> Publier aussi la vidéo longue sur Instagram et TikTok</label>
   <p class="hint">Elle est horizontale : ces applis l'affichent avec des bandes noires. Sur Instagram, elle part comme vidéo classique, hors de l'onglet Reels.</p>
   <label for="yp">Visibilité sur YouTube</label>

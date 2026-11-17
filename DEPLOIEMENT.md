@@ -219,7 +219,9 @@ Le pipeline rafraîchit le jeton chaque semaine. Si Meta exige l'*App Review* po
 4. Scopes : `user.info.basic`, `video.publish`.
 5. **Client key / Client secret** → `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` dans `.env`, puis `docker compose up -d shorts`.
 6. En mode **Sandbox**, ajoute ton compte TikTok aux utilisateurs de test.
-7. **Submit for review** : sans audit, publications **privées** uniquement, depuis un **compte privé**.
+7. **Mode de publication** (page **Réglages** de l'admin) :
+   - **Brouillon** (par défaut, scope `video.upload`) : chaque vidéo arrive dans ta boîte de réception TikTok ; tu la publies en public depuis l'appli, en collant la légende affichée sur la page de la journée dans l'admin. Fonctionne sans validation de l'appli. TikTok limite à 5 brouillons en attente par 24 h.
+   - **Direct** (scope `video.publish`) : sans validation de l'appli par TikTok, accepté seulement sur un compte privé, et les vidéos restent visibles par toi seul, même après la validation. La validation exige un écran de relecture avant chaque publication.
 
 **VPS** — autoriser ton compte :
 

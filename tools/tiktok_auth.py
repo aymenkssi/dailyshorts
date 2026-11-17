@@ -20,7 +20,7 @@ redirect = sys.argv[1] if len(sys.argv) > 1 else "https://aymendridi.com/tiktok-
 key, secret = os.environ["TIKTOK_CLIENT_KEY"], os.environ["TIKTOK_CLIENT_SECRET"]
 
 url = "https://www.tiktok.com/v2/auth/authorize/?" + urlencode({
-    "client_key": key, "scope": "user.info.basic,user.info.stats,video.list,video.publish", "response_type": "code",
+    "client_key": key, "scope": "user.info.basic,user.info.stats,video.list,video.publish,video.upload", "response_type": "code",
     "redirect_uri": redirect, "state": secrets.token_urlsafe(8)})
 print("1) Ouvre cette URL et autorise l'app :\n", url)
 back = input("2) Colle ici l'URL complète vers laquelle tu as été redirigé : ").strip()

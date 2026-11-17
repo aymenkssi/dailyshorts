@@ -160,25 +160,11 @@ def _tiktok_token():
     return tok["access_token"]
 
 
-def publish_tiktok(video, meta):
-    token = _tiktok_token()
-    h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=UTF-8"}
-    info = requests.post(f"{TT}/post/publish/creator_info/query/", headers=h, timeout=60).json()["data"]
-    options = info.get("privacy_level_options", [])
-    privacy = "PUBLIC_TO_EVERYONE" if "PUBLIC_TO_EVERYONE" in options else options[0]
-
-    video = light_copy(video)
-    max_s = info.get("max_video_post_duration_sec")
-    dur = _duration(video) or 0
-    if max_s and dur > max_s:
-        raise RuntimeError(f"TikTok : vidéo de {dur:.0f} s, mais ce compte est limité à {max_s} s")
+def _tiktok_upload(h, init_url, body, video):
+    """Initialise l'envoi, transfère le fichier en un bloc, renvoie le publish_id."""
     size = Path(video).stat().st_size
-    init = requests.post(f"{TT}/post/publish/video/init/", headers=h, timeout=60, json={
-        "post_info": {"title": caption_text(meta), "privacy_level": privacy, "is_aigc": True,
-                      "disable_comment": False, "disable_duet": False, "disable_stitch": False},
-        "source_info": {"source": "FILE_UPLOAD", "video_size": size,
-                        "chunk_size": size, "total_chunk_count": 1},
-    }).json()
+    body["source_info"] = {"source": "FILE_UPLOAD", "video_size": size, "chunk_size": size, "total_chunk_count": 1}
+    init = requests.post(init_url, headers=h, timeout=60, json=body).json()
     if init.get("error", {}).get("code") not in (None, "ok"):
         raise RuntimeError(f"TikTok init : {init['error']}")
     data = init["data"]
@@ -187,12 +173,46 @@ def publish_tiktok(video, meta):
             "Content-Type": "video/mp4", "Content-Length": str(size),
             "Content-Range": f"bytes 0-{size - 1}/{size}"})
     up.raise_for_status()
+    return data["publish_id"]
+
+
+def _tiktok_status(h, publish_id, done):
+    """Attend que TikTok ait traité la vidéo ; done : statuts considérés comme réussis."""
     for _ in range(40):
         time.sleep(15)
-        st = requests.post(f"{TT}/post/publish/status/fetch/", headers=h, timeout=60,
-                           json={"publish_id": data["publish_id"]}).json()["data"]["status"]
-        if st == "PUBLISH_COMPLETE":
-            return f"tiktok publish_id {data['publish_id']} ({privacy})"
+        d = requests.post(f"{TT}/post/publish/status/fetch/", headers=h, timeout=60,
+                          json={"publish_id": publish_id}).json().get("data", {})
+        st = d.get("status")
+        if st in done:
+            return st
         if st == "FAILED":
-            raise RuntimeError("TikTok : publication échouée")
-    return f"tiktok publish_id {data['publish_id']} (toujours en traitement)"
+            raise RuntimeError(f"TikTok : échec du traitement ({d.get('fail_reason', 'sans détail')})")
+    return "en traitement"
+
+
+def publish_tiktok(video, meta):
+    """TIKTOK_MODE=inbox (par défaut) : la vidéo arrive en brouillon dans la boîte de réception TikTok ;
+    tu la publies depuis l'appli (légende, visibilité). Fonctionne sans validation de l'appli par TikTok.
+    TIKTOK_MODE=direct : publication directe ; tant que l'appli n'est pas validée par TikTok, elle n'est
+    acceptée que sur un compte privé et reste visible par toi seul."""
+    token = _tiktok_token()
+    h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=UTF-8"}
+    video = light_copy(video)
+
+    if os.environ.get("TIKTOK_MODE", "inbox") != "direct":
+        pid = _tiktok_upload(h, f"{TT}/post/publish/inbox/video/init/", {}, video)
+        st = _tiktok_status(h, pid, {"SEND_TO_USER_INBOX", "PUBLISH_COMPLETE"})
+        return f"tiktok brouillon envoyé dans ta boîte de réception TikTok ({st}, publish_id {pid})"
+
+    info = requests.post(f"{TT}/post/publish/creator_info/query/", headers=h, timeout=60).json()["data"]
+    options = info.get("privacy_level_options", [])
+    privacy = "PUBLIC_TO_EVERYONE" if "PUBLIC_TO_EVERYONE" in options else options[0]
+    max_s = info.get("max_video_post_duration_sec")
+    dur = _duration(video) or 0
+    if max_s and dur > max_s:
+        raise RuntimeError(f"TikTok : vidéo de {dur:.0f} s, mais ce compte est limité à {max_s} s")
+    pid = _tiktok_upload(h, f"{TT}/post/publish/video/init/", {
+        "post_info": {"title": caption_text(meta), "privacy_level": privacy, "is_aigc": True,
+                      "disable_comment": False, "disable_duet": False, "disable_stitch": False}}, video)
+    st = _tiktok_status(h, pid, {"PUBLISH_COMPLETE"})
+    return f"tiktok publish_id {pid} ({privacy}, {st})"
