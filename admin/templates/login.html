@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Connexion · Daily Shorts</title><link rel="stylesheet" href="/static/style.css"></head>
+<title>Connexion · {{ channel }}</title><link rel="stylesheet" href="/static/style.css"></head>
 <body><div class="login"><div class="card">
-<h1>Forgotten Chapters</h1><p class="mute">Administration</p>
+<h1>{{ channel }}</h1><p class="mute">Administration</p>
 <form method="post" action="/login">
 <input type="hidden" name="next" value="{{ next }}">
 <label for="pw">Mot de passe</label>

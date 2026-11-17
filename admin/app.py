@@ -37,7 +37,7 @@ PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH", "")
 SESSION_HOURS = 12
 COOKIE = "ds_session"
 CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "")
-CHANNEL_NAME = os.environ.get("CHANNEL_NAME", "Forgotten Chapters")
+CHANNEL_NAME = os.environ.get("CHANNEL_NAME", "Anime Storytelling")
 # fichiers de vérification de domaine demandés par TikTok ou Google (déposés dans state/verify/)
 VERIFY_RE = re.compile(r"^/(tiktok[\w-]{4,80}\.txt|google[\w-]{4,80}\.html)$")
 
@@ -118,7 +118,7 @@ async def guard(request: Request, call_next):
 
 
 def page(request, name, **ctx):
-    ctx.update(csrf=csrf_token(request), llm_url=f"https://{LLM_DOMAIN}", active=name,
+    ctx.update(channel=CHANNEL_NAME, csrf=csrf_token(request), llm_url=f"https://{LLM_DOMAIN}", active=name,
                now=dt.datetime.now(TZ), flash=request.query_params.get("msg", ""))
     return templates.TemplateResponse(request, f"{name}.html", ctx)
 
@@ -139,7 +139,7 @@ def healthz():
 
 @app.get("/login", response_class=HTMLResponse)
 def login_form(request: Request, next: str = "/"):
-    return templates.TemplateResponse(request, "login.html", {"next": next, "error": ""})
+    return templates.TemplateResponse(request, "login.html", {"next": next, "error": "", "channel": CHANNEL_NAME})
 
 
 def safe_next(target):
@@ -157,12 +157,12 @@ def login(request: Request, password: str = Form(...), next: str = Form("/")):
     ip = client_ip(request)
     if too_many_failures(ip):
         return templates.TemplateResponse(request, "login.html", {
-            "next": next, "error": "Trop d'essais. Réessaie dans 15 minutes."}, status_code=429)
+            "next": next, "channel": CHANNEL_NAME, "error": "Trop d'essais. Réessaie dans 15 minutes."}, status_code=429)
     if not (SECRET and PASSWORD_HASH and verify_password(password)):
         _failures.setdefault(ip, []).append(time.time())
         time.sleep(1)
         return templates.TemplateResponse(request, "login.html", {
-            "next": next, "error": "Mot de passe incorrect."}, status_code=401)
+            "next": next, "channel": CHANNEL_NAME, "error": "Mot de passe incorrect."}, status_code=401)
     resp = RedirectResponse(safe_next(next), status_code=303)
     resp.set_cookie(COOKIE, new_session(), max_age=SESSION_HOURS * 3600, httponly=True, secure=SECURE_COOKIE,
                     samesite="lax", domain=COOKIE_DOMAIN if SECURE_COOKIE else None, path="/")

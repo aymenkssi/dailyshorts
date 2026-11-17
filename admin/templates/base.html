@@ -8,7 +8,7 @@
 </head>
 <body>
 <header><div class="bar">
-  <a class="brand" href="/">Forgotten <b>Chapters</b></a>
+  {% set parts = channel.split(' ', 1) %}<a class="brand" href="/">{{ parts[0] }}{% if parts|length > 1 %} <b>{{ parts[1] }}</b>{% endif %}</a>
   <nav>
     <a href="/" class="{{ 'on' if active == 'dashboard' }}">Tableau de bord</a>
     <a href="/videos" class="{{ 'on' if active in ('videos', 'day') }}">Vidéos</a>

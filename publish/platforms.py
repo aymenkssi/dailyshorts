@@ -11,8 +11,10 @@ import requests
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def caption_text(meta, limit=2200):
-    tags = " ".join("#" + t.lstrip("#").replace(" ", "") for t in meta.get("hashtags", []))
+def caption_text(meta, limit=2200, max_tags=None):
+    """Titre, description et hashtags. max_tags : Instagram n'accepte plus que 5 hashtags par publication."""
+    tags = meta.get("hashtags", [])[:max_tags] if max_tags else meta.get("hashtags", [])
+    tags = " ".join("#" + t.lstrip("#").replace(" ", "") for t in tags)
     return f"{meta['title']}\n\n{meta['description']}\n\n{tags}"[:limit]
 
 
@@ -116,7 +118,7 @@ def publish_instagram(video, meta, date, suffix=""):
     base = f"https://{_ig_host()}/{os.environ.get('IG_GRAPH_VERSION', 'v23.0')}"
     uid, token = os.environ["IG_USER_ID"], _ig_token()
     r = requests.post(f"{base}/{uid}/media", data={
-        "media_type": "REELS", "video_url": url, "caption": caption_text(meta),
+        "media_type": "REELS", "video_url": url, "caption": caption_text(meta, max_tags=5),
         "share_to_feed": "true", "access_token": token}, timeout=120)
     if not r.ok:
         raise RuntimeError(f"Instagram {r.status_code} : {r.text[:400]}")
