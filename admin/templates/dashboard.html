@@ -14,6 +14,7 @@
   {% if s.require_approval and today.state == 'prête' %}<p><b>En attente de ta validation</b> : rien ne sera publié tant que tu n'approuves pas.</p>{% endif %}
   {{ m.day_actions(today, csrf, s.require_approval) }}
 </div>
+{% if s.publish_tiktok and s.tiktok_mode == 'inbox' %}{{ m.captions(today) }}{% endif %}
 <div class="grid">
   <div class="card"><h2>Programmation</h2>
     <div class="kpis">

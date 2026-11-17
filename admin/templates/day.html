@@ -15,16 +15,7 @@
 {% if d.published %}<div class="card" style="margin-bottom:16px"><h2>Publications</h2><table>
 {% for k, v in d.published.items() %}<tr><td>{{ k }}</td><td>{% if v.startswith('OK http') %}<a href="{{ v[3:] }}" target="_blank" rel="noopener">{{ v[3:] }}</a>{% else %}{{ v }}{% endif %}</td></tr>{% endfor %}
 </table></div>{% endif %}
-{% if d.scripts %}<div class="card" style="margin-bottom:16px"><h2>Légendes à copier (TikTok, Instagram)</h2>
-<p class="hint">En mode brouillon, TikTok ne reprend pas la légende : copie-la au moment de publier depuis l'appli.</p>
-{% for kind, label in (('short', 'Short'), ('long', 'Vidéo longue')) %}{% set sc = d.scripts.get(kind) %}{% if sc %}
-<label for="cap-{{ kind }}">{{ label }}</label>
-<textarea id="cap-{{ kind }}" rows="5" readonly>{{ sc.title }}
-
-{{ sc.description }}
-
-{% for t in sc.hashtags %}#{{ t|replace('#', '')|replace(' ', '') }} {% endfor %}</textarea>
-{% endif %}{% endfor %}</div>{% endif %}
+{{ m.captions(d) }}
 {% for kind, label in (('long', 'Script de la vidéo longue'), ('short', 'Script du Short')) %}{% if d.scripts.get(kind) %}
 <div class="card script" style="margin-bottom:16px"><h2>{{ label }}</h2>
 <p class="mute small">{{ d.scripts[kind].title }} — {{ d.scripts[kind].scenes|length }} plans</p>
