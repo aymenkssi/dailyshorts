@@ -155,6 +155,10 @@ def main():
             traceback.print_exc()
         print(f"{name} : {results[name]}")
         results_file.write_text(json.dumps(results, indent=1))
+    if not failed:
+        # toutes les publications de la journée ont réussi (y compris après une relance manuelle)
+        store.set_flag(args.date, "failed", False)
+        store.set_flag(args.date, "done")
     sys.exit(1 if failed else 0)
 
 

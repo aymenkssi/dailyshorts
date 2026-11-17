@@ -191,7 +191,9 @@ def day_status(day):
     videos = {k: (d / k / "final.mp4").exists() for k in ("long", "short")}
     scripts = _read(d / "scripts.json", {})
     published = _read(d / "published.json", {})
-    if flags["done"]:
+    tried = [v for v in published.values() if v]
+    all_ok = bool(tried) and all(str(v).startswith("OK") for v in tried) and all(videos.values())
+    if flags["done"] or (flags["failed"] and all_ok):  # échec rattrapé par une relance
         state = "publiée"
     elif flags["rejected"]:
         state = "refusée"
