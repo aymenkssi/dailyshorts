@@ -283,7 +283,7 @@ Deux adresses, servies par Traefik :
 - **Réglages** : heures de création et de publication, durées, plateformes actives, visibilité YouTube, validation obligatoire, ligne éditoriale, voix. Ils sont enregistrés dans `state/settings.json`, pris en compte dans la minute, et **priment sur le `.env`**.
 - **Sujets** : file de sujets imposés ; file vide = l'IA choisit.
 - **Validation** : si elle est exigée, les vidéos créées la nuit attendent ton approbation ; sans approbation le jour même, rien n'est publié. Boutons : Approuver, Publier maintenant, Refuser, Refaire.
-- **Statistiques** : YouTube demande de refaire une fois l'autorisation avec le droit de lecture (`tools/youtube_auth.py` sur ton PC, puis recopie de `youtube_token.json`). TikTok demande le scope `user.info.stats` dans ton appli TikTok. Instagram s'affiche dès que le compte est connecté.
+- **Statistiques** : une ligne par vidéo publiée, avec son format (Longue / Short). YouTube demande l'autorisation avec le droit de lecture (`tools/youtube_auth.py`). TikTok demande les scopes `user.info.stats` (totaux) et `video.list` (détail par vidéo, vidéos publiques uniquement) dans ton appli TikTok, puis `tools/tiktok_auth.py`. Pour les vues Instagram, ajoute la permission `instagram_manage_insights` à la configuration Meta et génère un nouveau jeton ; sans elle, les J'aime et commentaires s'affichent quand même.
 
 ### Sécurité
 

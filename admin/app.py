@@ -319,16 +319,26 @@ async def settings_save(request: Request):
 
 @app.get("/stats", response_class=HTMLResponse)
 def stats_page(request: Request):
-    rows, ids = [], []
+    """Une ligne par vidéo publiée, avec son format (Longue / Short), d'après published.json."""
+    yt_rows, ig_rows = [], []
     for d in store.list_days(30):
         st = store.day_status(d)
-        row = {"day": d, "title": st["title"],
-               "long": stats.youtube_id(st["published"].get("youtube_long")),
-               "short": stats.youtube_id(st["published"].get("youtube_short"))}
-        if row["long"] or row["short"]:
-            rows.append(row)
-            ids += [i for i in (row["long"], row["short"]) if i]
-    return page(request, "stats", yt=stats.youtube(ids), ig=stats.instagram(), tt=stats.tiktok(), rows=rows)
+        pub = st["published"]
+        for key, fmt in (("youtube_long", "Longue"), ("youtube_short", "Short")):
+            vid = stats.youtube_id(pub.get(key))
+            if vid:
+                yt_rows.append({"day": d, "format": fmt, "id": vid,
+                                "title": (st["scripts"].get("long" if fmt == "Longue" else "short") or {}).get("title")
+                                or st["title"]})
+        for key, fmt in (("instagram_long", "Longue"), ("instagram", "Short")):
+            mid = stats.instagram_id(pub.get(key))
+            if mid:
+                ig_rows.append({"day": d, "format": fmt, "id": mid,
+                                "title": (st["scripts"].get("long" if fmt == "Longue" else "short") or {}).get("title")
+                                or st["title"]})
+    return page(request, "stats", yt=stats.youtube([r["id"] for r in yt_rows]),
+                ig=stats.instagram([r["id"] for r in ig_rows]), tt=stats.tiktok(),
+                yt_rows=yt_rows, ig_rows=ig_rows)
 
 
 @app.get("/journal", response_class=HTMLResponse)

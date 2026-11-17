@@ -25,19 +25,45 @@
     <div class="kpi"><span>Vidéos</span><b>{{ m.n(tt.videos) }}</b></div></div>{% endif %}
 </div>
 </div>
+{% macro fmt(f) -%}<span class="pill {{ 'ok' if f == 'Short' else '' }}">{{ f }}</span>{%- endmacro %}
+
+{% macro fmt(f) -%}<span class="pill {{ 'ok' if f == 'Short' else '' }}">{{ f }}</span>{%- endmacro %}
+
 <div class="card" style="margin-top:16px"><h2>YouTube — vidéos des 30 derniers jours</h2>
-{% if rows and not yt.error %}<div class="scroll"><table>
-<tr><th>Date</th><th>Titre</th><th>Format</th><th class="num">Vues</th><th class="num">J'aime</th><th class="num">Commentaires</th><th>Visibilité</th></tr>
-{% for r in rows %}{% for kind, vid in (('Longue', r.long), ('Short', r.short)) %}{% if vid %}{% set v = yt.per_video.get(vid) %}
-<tr><td>{{ r.day }}</td><td><a href="https://youtu.be/{{ vid }}" target="_blank" rel="noopener">{{ r.title or vid }}</a></td><td>{{ kind }}</td>
+{% if yt_rows and not yt.error %}<div class="scroll"><table>
+<tr><th>Date</th><th>Format</th><th>Titre</th><th class="num">Vues</th><th class="num">J'aime</th><th class="num">Commentaires</th><th>Visibilité</th></tr>
+{% for r in yt_rows %}{% set v = yt.per_video.get(r.id) %}
+<tr><td>{{ r.day }}</td><td>{{ fmt(r.format) }}</td><td><a href="https://youtu.be/{{ r.id }}" target="_blank" rel="noopener">{{ r.title or r.id }}</a></td>
 {% if v %}<td class="num">{{ m.n(v.views) }}</td><td class="num">{{ m.n(v.likes) }}</td><td class="num">{{ m.n(v.comments) }}</td><td>{{ v.privacy }}</td>
 {% else %}<td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="mute">introuvable</td>{% endif %}</tr>
-{% endif %}{% endfor %}{% endfor %}</table></div>
+{% endfor %}</table></div>
 {% elif yt.error %}<p class="mute">Disponible une fois YouTube connecté en lecture.</p>
 {% else %}<p class="mute">Aucune vidéo publiée sur YouTube pour l'instant.</p>{% endif %}
 </div>
-{% if not ig.error and ig.recent %}<div class="card" style="margin-top:16px"><h2>Instagram — dernières publications</h2><div class="scroll"><table>
-<tr><th>Date</th><th>Titre</th><th class="num">J'aime</th><th class="num">Commentaires</th></tr>
-{% for r in ig.recent %}<tr><td>{{ r.date }}</td><td><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.title or 'voir' }}</a></td><td class="num">{{ m.n(r.likes) }}</td><td class="num">{{ m.n(r.comments) }}</td></tr>{% endfor %}
-</table></div></div>{% endif %}
+
+<div class="card" style="margin-top:16px"><h2>Instagram — vidéos des 30 derniers jours</h2>
+{% if ig_rows and not ig.error %}<div class="scroll"><table>
+<tr><th>Date</th><th>Format</th><th>Titre</th><th class="num">Vues</th><th class="num">J'aime</th><th class="num">Commentaires</th></tr>
+{% for r in ig_rows %}{% set v = ig.per_media.get(r.id) %}
+<tr><td>{{ r.day }}</td><td>{{ fmt(r.format) }}</td>
+{% if v and not v.missing %}<td><a href="{{ v.url }}" target="_blank" rel="noopener">{{ r.title or r.id }}</a></td>
+<td class="num">{{ m.n(v.views) if v.views is not none else '—' }}</td><td class="num">{{ m.n(v.likes) }}</td><td class="num">{{ m.n(v.comments) }}</td>
+{% else %}<td>{{ r.title or r.id }}</td><td class="num">—</td><td class="num">—</td><td class="num mute">introuvable</td>{% endif %}</tr>
+{% endfor %}</table></div>
+{% if ig.views_note %}<p class="hint">{{ ig.views_note }}</p>{% endif %}
+{% elif ig.error %}<p class="mute">Disponible une fois Instagram connecté.</p>
+{% else %}<p class="mute">Aucune vidéo publiée sur Instagram par le pipeline pour l'instant.</p>{% endif %}
+</div>
+
+<div class="card" style="margin-top:16px"><h2>TikTok — dernières vidéos</h2>
+{% if tt.error %}<p class="mute">Disponible une fois TikTok connecté.</p>
+{% elif tt.list %}<div class="scroll"><table>
+<tr><th>Date</th><th>Format</th><th>Titre</th><th class="num">Vues</th><th class="num">J'aime</th><th class="num">Commentaires</th><th class="num">Partages</th></tr>
+{% for r in tt.list %}<tr><td>{{ r.date }}</td><td>{{ fmt(r.format) }}</td>
+<td>{% if r.url %}<a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.title or 'voir' }}</a>{% else %}{{ r.title or '—' }}{% endif %}</td>
+<td class="num">{{ m.n(r.views) }}</td><td class="num">{{ m.n(r.likes) }}</td><td class="num">{{ m.n(r.comments) }}</td><td class="num">{{ m.n(r.shares) }}</td></tr>
+{% endfor %}</table></div>
+<p class="hint">Format déduit de la durée : Short jusqu'à 90 s, Longue au-delà.</p>
+{% else %}<p class="mute">{{ tt.list_note }}</p>{% endif %}
+</div>
 {% endblock %}

@@ -83,7 +83,13 @@ def youtube_id(result):
 
 
 # ---------- Instagram ----------
-def instagram():
+def instagram_id(result):
+    """Identifiant de publication d'une ligne de published.json ('OK instagram media id 1792…')."""
+    m = re.search(r"media id (\d+)", str(result))
+    return m.group(1) if m else None
+
+
+def instagram(media_ids=()):
     def fetch():
         uid = os.environ.get("IG_USER_ID", "")
         tok = (_json(STATE / "ig_token.json") or {}).get("token") or os.environ.get("IG_ACCESS_TOKEN", "")
@@ -97,20 +103,36 @@ def instagram():
             raise RuntimeError(f"Instagram {r.status_code} : {r.text[:200]}")
         d = r.json()
         out = {"name": d.get("username", ""), "followers": d.get("followers_count", 0),
-               "media": d.get("media_count", 0), "recent": []}
-        m = requests.get(f"{base}/{uid}/media", timeout=30, params={
-            "fields": "id,caption,permalink,timestamp,like_count,comments_count", "limit": 10,
-            "access_token": tok})
-        if m.ok:
-            for it in m.json().get("data", []):
-                out["recent"].append({"title": (it.get("caption") or "").split("\n")[0][:80],
-                                      "url": it.get("permalink"), "date": (it.get("timestamp") or "")[:10],
-                                      "likes": it.get("like_count", 0), "comments": it.get("comments_count", 0)})
+               "media": d.get("media_count", 0), "per_media": {}, "views_note": ""}
+        views_ok = True
+        for mid in list(dict.fromkeys(media_ids))[:60]:
+            m = requests.get(f"{base}/{mid}", timeout=30, params={
+                "fields": "like_count,comments_count,permalink,timestamp", "access_token": tok})
+            if not m.ok:
+                out["per_media"][mid] = {"missing": True}
+                continue
+            it = m.json()
+            row = {"likes": it.get("like_count", 0), "comments": it.get("comments_count", 0),
+                   "url": it.get("permalink"), "views": None}
+            if views_ok:  # les vues demandent la permission de lecture des statistiques (insights)
+                v = requests.get(f"{base}/{mid}/insights", timeout=30,
+                                 params={"metric": "views", "access_token": tok})
+                if v.ok:
+                    data = v.json().get("data", [])
+                    row["views"] = (data[0].get("values") or [{}])[0].get("value") if data else None
+                else:
+                    views_ok = False
+                    out["views_note"] = ("Vues indisponibles : ajoute la permission instagram_manage_insights "
+                                         "à la configuration Meta, puis génère un nouveau jeton.")
+            out["per_media"][mid] = row
         return out
-    return cached("ig", 900, fetch)
+    return cached(("ig", tuple(media_ids)), 900, fetch)
 
 
 # ---------- TikTok ----------
+SHORT_MAX_SECONDS = 90
+
+
 def tiktok():
     def fetch():
         tok = _json(STATE / os.environ.get("TIKTOK_TOKEN_FILE", "state/tiktok_token.json").split("/")[-1])
@@ -118,14 +140,36 @@ def tiktok():
             raise RuntimeError("non connecté")
         if time.time() > tok.get("expires_at", 0):
             raise RuntimeError("jeton expiré : il sera renouvelé à la prochaine publication")
-        r = requests.get("https://open.tiktokapis.com/v2/user/info/", timeout=30,
-                         headers={"Authorization": f"Bearer {tok['access_token']}"},
+        h = {"Authorization": f"Bearer {tok['access_token']}"}
+        r = requests.get("https://open.tiktokapis.com/v2/user/info/", timeout=30, headers=h,
                          params={"fields": "display_name,follower_count,likes_count,video_count"})
         d = r.json()
         if r.status_code != 200 or d.get("error", {}).get("code") not in (None, "ok"):
             raise RuntimeError("droit de lecture des statistiques manquant (scope user.info.stats) : "
                                "relance tools/tiktok_auth.py")
         u = d["data"]["user"]
-        return {"name": u.get("display_name", ""), "followers": u.get("follower_count", 0),
-                "likes": u.get("likes_count", 0), "videos": u.get("video_count", 0)}
+        out = {"name": u.get("display_name", ""), "followers": u.get("follower_count", 0),
+               "likes": u.get("likes_count", 0), "videos": u.get("video_count", 0),
+               "list": [], "list_note": ""}
+        v = requests.post("https://open.tiktokapis.com/v2/video/list/", timeout=30,
+                          headers={**h, "Content-Type": "application/json"}, json={"max_count": 20},
+                          params={"fields": "id,title,video_description,duration,create_time,share_url,"
+                                            "view_count,like_count,comment_count,share_count"})
+        vd = v.json() if v.headers.get("content-type", "").startswith("application/json") else {}
+        if v.status_code != 200 or vd.get("error", {}).get("code") not in (None, "ok"):
+            out["list_note"] = ("Détail par vidéo indisponible : ajoute le scope video.list à ton appli TikTok, "
+                                "puis relance tools/tiktok_auth.py.")
+            return out
+        for it in vd.get("data", {}).get("videos", []):
+            dur = it.get("duration") or 0
+            out["list"].append({
+                "date": time.strftime("%Y-%m-%d", time.localtime(it.get("create_time", 0))),
+                "title": (it.get("title") or it.get("video_description") or "").split("\n")[0][:90],
+                "format": "Short" if dur and dur <= SHORT_MAX_SECONDS else ("Longue" if dur else "—"),
+                "url": it.get("share_url"), "views": it.get("view_count", 0), "likes": it.get("like_count", 0),
+                "comments": it.get("comment_count", 0), "shares": it.get("share_count", 0)})
+        if not out["list"]:
+            out["list_note"] = ("Aucune vidéo renvoyée : TikTok ne liste que les vidéos publiques "
+                                "(compte privé tant que l'appli n'est pas validée).")
+        return out
     return cached("tt", 900, fetch)
