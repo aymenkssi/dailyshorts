@@ -7,7 +7,7 @@ Daily Shorts se déploie comme Waselni : une pile **Docker Compose** derrière l
 | `dailyshorts-freellmapi` | routeur de LLM gratuits | `llm.daily.creationapp.academy` (après connexion à l'admin) et `127.0.0.1:3001` |
 | `dailyshorts-pipeline` | crée chaque nuit à 1 h une vidéo longue (4 min) et un Short d'accroche, puis les publie à 16 h 47 (heure de Paris) (heure de Paris) | aucune |
 | `dailyshorts-admin` | interface d'administration sur `daily.creationapp.academy` | via Traefik, mot de passe |
-| `dailyshorts-media` | sert `https://aymendridi.com/shorts/*.mp4` pour Instagram | via Traefik |
+| `dailyshorts-media` | sert `https://aymendridi.com/shorts/*.mp4` pour Instagram et Facebook | via Traefik |
 
 Les commandes se lancent sur le VPS, sauf les blocs marqués **(PC)**. `user@IP_VPS` = ton accès SSH.
 
@@ -209,6 +209,34 @@ Le pipeline rafraîchit le jeton chaque semaine. Si Meta exige l'*App Review* po
 
 ---
 
+## 9 bis. Facebook
+
+Le pipeline publie sur ta **Page** Facebook (pas sur un profil personnel) : la vidéo longue comme vidéo de la Page, puis le Short comme Reel, avec le lien vers la vidéo longue. Il réutilise l'appli Meta et le portefeuille business d'Instagram.
+
+1. **Créer la Page** (si besoin) : facebook.com → **Pages → Créer une Page**. Nom : « Anime Storytelling · History & News », catégorie **Média/actualités** ou **Créateur de vidéos**. Visuels : dossier `08_Facebook` de la charte graphique. Textes : section Facebook du kit de lancement.
+2. **Lier Instagram à la Page** (conseillé) : Page → **Paramètres → Comptes liés → Instagram**.
+3. **Ajouter la Page au portefeuille business** : business.facebook.com → **Paramètres → Comptes → Pages → Ajouter**.
+4. **L'attribuer à l'utilisateur système** déjà créé pour Instagram : **Utilisateurs → Utilisateurs système** → ton utilisateur → **Attribuer des éléments → Pages** → la Page → **Contrôle total**.
+5. **Générer un nouveau jeton** pour cet utilisateur système (même appli), en cochant en plus des permissions Instagram : `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, et `read_insights` pour les vues dans les statistiques. Expiration : **Jamais**.
+6. Dans `.env` : remplace `IG_ACCESS_TOKEN` par ce nouveau jeton (il sert aux deux), ou mets-le dans `FB_ACCESS_TOKEN` si tu préfères garder deux jetons séparés.
+7. Vérifier et récupérer l'identifiant de la Page :
+
+   ```bash
+   docker compose run --rm shorts python tools/facebook_check.py
+   ```
+
+   Copie la ligne `FB_PAGE_ID=…` dans `.env`, puis :
+
+   ```bash
+   docker compose up -d shorts admin
+   ```
+
+8. Coche **Facebook** dans la page **Réglages** de l'admin.
+
+Facebook limite les Reels publiés par API à 30 par 24 h et par Page (on en publie 1). Les vidéos sont publiques dès la publication : une Page n'a pas de mode privé.
+
+---
+
 ## 10. TikTok
 
 **Navigateur** — developers.tiktok.com → **Manage apps → Connect an app** :
@@ -240,7 +268,7 @@ Dans `.env` : `PUBLISH_YOUTUBE=true` (et les autres quand ils sont prêts), puis
 ```bash
 docker compose up -d shorts                               # recharge le .env
 docker compose exec shorts python main.py                 # premier passage réel
-cat output/$(TZ=Europe/Paris date +%F)/published.json     # youtube_long, youtube_short, instagram, tiktok : "OK …"
+cat output/$(TZ=Europe/Paris date +%F)/published.json     # youtube_long, youtube_short, instagram, tiktok, facebook_long, facebook : "OK …"
 ```
 
 En cas d'erreur sur une plateforme : corrige et relance la même commande (la vidéo n'est pas regénérée, les plateformes réussies sont sautées).
@@ -286,7 +314,7 @@ Deux adresses, servies par Traefik :
 - **Sujets** : file de sujets imposés ; file vide = l'IA choisit.
 - **Récapitulatif de l'actualité** : chaque dimanche (réglable), la vidéo d'histoire est remplacée par un récapitulatif mondial de 6 minutes et son Short, à partir des pages « Current events » de Wikipédia des 6 jours précédents. Le serveur doit pouvoir joindre `en.wikipedia.org`.
 - **Validation** : si elle est exigée, les vidéos créées la nuit attendent ton approbation ; sans approbation le jour même, rien n'est publié. Boutons : Approuver, Publier maintenant, Refuser, Refaire.
-- **Statistiques** : une ligne par vidéo publiée, avec son format (Longue / Short). YouTube demande l'autorisation avec le droit de lecture (`tools/youtube_auth.py`). TikTok demande les scopes `user.info.stats` (totaux) et `video.list` (détail par vidéo, vidéos publiques uniquement) dans ton appli TikTok, puis `tools/tiktok_auth.py`. Pour les vues Instagram, ajoute la permission `instagram_manage_insights` à la configuration Meta et génère un nouveau jeton ; sans elle, les J'aime et commentaires s'affichent quand même.
+- **Statistiques** : une ligne par vidéo publiée, avec son format (Longue / Short). YouTube demande l'autorisation avec le droit de lecture (`tools/youtube_auth.py`). TikTok demande les scopes `user.info.stats` (totaux) et `video.list` (détail par vidéo, vidéos publiques uniquement) dans ton appli TikTok, puis `tools/tiktok_auth.py`. Pour les vues Instagram, ajoute la permission `instagram_manage_insights` à la configuration Meta et génère un nouveau jeton ; sans elle, les J'aime et commentaires s'affichent quand même. Pour les vues Facebook, c'est la permission `read_insights`.
 
 ### Sécurité
 
@@ -322,4 +350,6 @@ Deux adresses, servies par Traefik :
 | Build ou voix tués (`Killed`) | manque de RAM | swap (étape 1) |
 | YouTube `invalid_grant` | jeton révoqué ou appli restée en « Test » | étape 8.4 puis refaire l'autorisation |
 | Instagram `ERROR` | URL vidéo injoignable | refaire le test `curl -I` de l'étape 6 |
+| Facebook `(#200)` ou `(#10)` | permission ou Page non attribuée au jeton | étape 9 bis, points 4 et 5, puis `tools/facebook_check.py` |
+| Facebook `non connecté` | `FB_PAGE_ID` absent de `.env` | `tools/facebook_check.py`, puis `docker compose up -d shorts admin` |
 | TikTok `unaudited_client_can_only_post_to_private_accounts` | audit non validé | compte TikTok en privé ou `PUBLISH_TIKTOK=false` |

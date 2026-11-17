@@ -77,6 +77,9 @@ services:
       IG_ACCESS_TOKEN: ${IG_ACCESS_TOKEN:-}
       IG_GRAPH_VERSION: ${IG_GRAPH_VERSION:-v23.0}
       IG_GRAPH_HOST: ${IG_GRAPH_HOST:-graph.facebook.com}
+      FB_PAGE_ID: ${FB_PAGE_ID:-}
+      FB_ACCESS_TOKEN: ${FB_ACCESS_TOKEN:-}
+      FB_GRAPH_VERSION: ${FB_GRAPH_VERSION:-}
     volumes:
       - ./state:/app/state
       - ./output:/app/output
@@ -90,7 +93,7 @@ services:
       - traefik.http.routers.dailyshorts-admin.tls.certresolver=letsencrypt
       - traefik.http.services.dailyshorts-admin.loadbalancer.server.port=8000
 
-  # Sert /shorts/*.mp4 pour qu'Instagram puisse télécharger la vidéo du jour
+  # Sert /shorts/*.mp4 pour qu'Instagram et Facebook puissent télécharger la vidéo du jour
   media:
     image: nginx:alpine
     container_name: dailyshorts-media

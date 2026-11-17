@@ -17,6 +17,7 @@
   <label class="check"><input type="checkbox" name="publish_youtube" {{ 'checked' if s.publish_youtube }}> YouTube (vidéo longue + Short)</label>
   <label class="check"><input type="checkbox" name="publish_instagram" {{ 'checked' if s.publish_instagram }}> Instagram (Short)</label>
   <label class="check"><input type="checkbox" name="publish_tiktok" {{ 'checked' if s.publish_tiktok }}> TikTok (Short)</label>
+  <label class="check"><input type="checkbox" name="publish_facebook" {{ 'checked' if s.publish_facebook }}> Facebook (vidéo longue + Short en Reel)</label>
   <label for="tm">Mode TikTok</label>
   <select id="tm" name="tiktok_mode">
     <option value="inbox" {{ 'selected' if s.tiktok_mode == 'inbox' }}>Brouillon dans ma boîte TikTok (je publie depuis l'appli)</option>
@@ -65,5 +66,5 @@
 </div>
 <div class="actions"><button class="primary">Enregistrer</button></div>
 </form>
-<p class="hint" style="margin-top:20px">Les clés des fournisseurs d'IA se gèrent dans <a href="{{ llm_url }}" target="_blank" rel="noopener">FreeLLMAPI</a>. Les jetons YouTube, Instagram et TikTok se configurent sur le serveur (voir DEPLOIEMENT.md).</p>
+<p class="hint" style="margin-top:20px">Les clés des fournisseurs d'IA se gèrent dans <a href="{{ llm_url }}" target="_blank" rel="noopener">FreeLLMAPI</a>. Les jetons YouTube, Instagram, Facebook et TikTok se configurent sur le serveur (voir DEPLOIEMENT.md).</p>
 {% endblock %}

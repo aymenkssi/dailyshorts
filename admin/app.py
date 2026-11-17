@@ -320,7 +320,7 @@ async def settings_save(request: Request):
 @app.get("/stats", response_class=HTMLResponse)
 def stats_page(request: Request):
     """Une ligne par vidéo publiée, avec son format (Longue / Short), d'après published.json."""
-    yt_rows, ig_rows = [], []
+    yt_rows, ig_rows, fb_rows = [], [], []
     for d in store.list_days(30):
         st = store.day_status(d)
         pub = st["published"]
@@ -336,9 +336,16 @@ def stats_page(request: Request):
                 ig_rows.append({"day": d, "format": fmt, "id": mid,
                                 "title": (st["scripts"].get("long" if fmt == "Longue" else "short") or {}).get("title")
                                 or st["title"]})
+        for key, fmt in (("facebook_long", "Longue"), ("facebook", "Short")):
+            vid = stats.facebook_id(pub.get(key))
+            if vid:
+                fb_rows.append({"day": d, "format": fmt, "id": vid,
+                                "title": (st["scripts"].get("long" if fmt == "Longue" else "short") or {}).get("title")
+                                or st["title"]})
     return page(request, "stats", yt=stats.youtube([r["id"] for r in yt_rows]),
                 ig=stats.instagram([r["id"] for r in ig_rows]), tt=stats.tiktok(),
-                yt_rows=yt_rows, ig_rows=ig_rows)
+                fb=stats.facebook([r["id"] for r in fb_rows]),
+                yt_rows=yt_rows, ig_rows=ig_rows, fb_rows=fb_rows)
 
 
 @app.get("/journal", response_class=HTMLResponse)

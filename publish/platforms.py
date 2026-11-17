@@ -1,6 +1,7 @@
-"""Publication automatique : YouTube (vidéo longue + Short), Instagram Reels, TikTok."""
+"""Publication automatique : YouTube (vidéo longue + Short), Instagram Reels, TikTok, Page Facebook."""
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -105,15 +106,21 @@ def _ig_token():
     return tok["token"]
 
 
+def public_url(video, name):
+    """Copie la vidéo dans le dossier servi par le conteneur media et renvoie son adresse publique."""
+    pub_dir = Path(os.environ["PUBLIC_VIDEO_DIR"])
+    pub_dir.mkdir(parents=True, exist_ok=True)
+    tmp = pub_dir / f".{name}.tmp"
+    shutil.copy(video, tmp)
+    os.replace(tmp, pub_dir / name)  # jamais de fichier à moitié copié servi à Meta
+    return os.environ["PUBLIC_VIDEO_BASE_URL"].rstrip("/") + "/" + name
+
+
 def publish_instagram(video, meta, date, suffix=""):
     """suffix : distingue les fichiers publics du même jour (ex. "-long")."""
     video = light_copy(video)
     # 1) rendre la vidéo accessible publiquement via le serveur web du VPS
-    pub_dir = Path(os.environ["PUBLIC_VIDEO_DIR"])
-    pub_dir.mkdir(parents=True, exist_ok=True)
-    name = f"{date}{suffix}.mp4"
-    shutil.copy(video, pub_dir / name)
-    url = os.environ["PUBLIC_VIDEO_BASE_URL"].rstrip("/") + "/" + name
+    url = public_url(video, f"{date}{suffix}.mp4")
 
     base = f"https://{_ig_host()}/{os.environ.get('IG_GRAPH_VERSION', 'v23.0')}"
     uid, token = os.environ["IG_USER_ID"], _ig_token()
@@ -140,6 +147,105 @@ def publish_instagram(video, meta, date, suffix=""):
                       data={"creation_id": container, "access_token": token}, timeout=120)
     r.raise_for_status()
     return f"instagram media id {r.json()['id']}"
+
+
+# ---------------- Facebook (Page) ----------------
+def _fb_base(host="graph.facebook.com"):
+    return f"https://{host}/{os.environ.get('FB_GRAPH_VERSION') or os.environ.get('IG_GRAPH_VERSION', 'v23.0')}"
+
+
+def fb_page_token():
+    """(identifiant de Page, jeton de Page).
+
+    FB_ACCESS_TOKEN peut être un jeton d'utilisateur système du portefeuille business (celui d'Instagram
+    convient s'il a les permissions des Pages) : on en déduit alors le jeton de la Page, qui n'expire pas.
+    S'il s'agit déjà d'un jeton de Page, il est utilisé tel quel."""
+    page = os.environ.get("FB_PAGE_ID", "")
+    tok = os.environ.get("FB_ACCESS_TOKEN") or os.environ.get("IG_ACCESS_TOKEN", "")
+    if not page or page == "..." or not tok or tok == "...":
+        raise RuntimeError("non connecté : FB_PAGE_ID et FB_ACCESS_TOKEN manquent dans .env")
+    try:
+        r = requests.get(f"{_fb_base()}/{page}", params={"fields": "access_token", "access_token": tok}, timeout=30)
+        if r.ok and r.json().get("access_token"):
+            return page, r.json()["access_token"]
+    except requests.RequestException:
+        pass
+    return page, tok
+
+
+def facebook_link(result):
+    """Lien public d'une vidéo à partir d'une ligne de published.json ('OK facebook video id 123…')."""
+    m = re.search(r"facebook video id (\d+)", str(result))
+    return f"https://www.facebook.com/watch/?v={m.group(1)}" if m else ""
+
+
+def _fb_wait(vid, token, what, minutes=15):
+    """Attend la fin du traitement. Un délai dépassé n'est pas une erreur : la vidéo est déjà envoyée et
+    sera publiée par Facebook une fois traitée (la relancer créerait un doublon)."""
+    for _ in range(minutes * 4):
+        time.sleep(15)
+        try:
+            st = requests.get(f"{_fb_base()}/{vid}", params={"fields": "status", "access_token": token},
+                              timeout=30).json().get("status", {})
+        except (requests.RequestException, ValueError):
+            continue
+        vs = st.get("video_status")
+        if vs in ("error", "expired", "upload_failed"):
+            detail = (st.get("processing_phase") or {}).get("error") or (st.get("uploading_phase") or {}).get("error")
+            raise RuntimeError(f"Facebook ({what}) : traitement {vs} — {detail or 'sans détail'}")
+        pub = (st.get("publishing_phase") or {}).get("publish_status")
+        if pub == "published" or (vs == "ready" and pub in (None, "published")):
+            return ""
+    return " (traitement encore en cours chez Facebook)"
+
+
+def publish_facebook_reel(video, meta, extra=""):
+    """Short → Reel de la Page : session, envoi du fichier à rupload.facebook.com, puis publication."""
+    page, token = fb_page_token()
+    video = light_copy(video)
+    r = requests.post(f"{_fb_base()}/{page}/video_reels",
+                      data={"upload_phase": "start", "access_token": token}, timeout=60)
+    if not r.ok:
+        raise RuntimeError(f"Facebook {r.status_code} : {r.text[:400]}")
+    vid = r.json()["video_id"]
+    upload_url = r.json().get("upload_url") or f"{_fb_base('rupload.facebook.com/video-upload')}/{vid}"
+    size = Path(video).stat().st_size
+    for attempt in range(3):
+        try:
+            with open(video, "rb") as f:
+                u = requests.post(upload_url, data=f, timeout=900, headers={
+                    "Authorization": f"OAuth {token}", "offset": "0", "file_size": str(size),
+                    "Content-Type": "application/octet-stream"})
+            if u.ok and u.json().get("success"):
+                break
+            err = f"{u.status_code} {u.text[:300]}"
+        except requests.RequestException as e:
+            err = str(e)
+        time.sleep(15 * (attempt + 1))
+    else:
+        raise RuntimeError(f"Facebook : envoi du Reel refusé — {err}")
+    desc = caption_text({**meta, "description": f"{meta['description']}\n\n{extra}" if extra else meta["description"]})
+    r = requests.post(f"{_fb_base()}/{page}/video_reels", timeout=120, data={
+        "upload_phase": "finish", "video_id": vid, "video_state": "PUBLISHED",
+        "title": meta["title"][:255], "description": desc[:2200], "is_ai_generated": "true",
+        "access_token": token})
+    if not r.ok:
+        raise RuntimeError(f"Facebook {r.status_code} : {r.text[:400]}")
+    return f"facebook video id {vid}" + _fb_wait(vid, token, "Reel")
+
+
+def publish_facebook_video(video, meta, date):
+    """Vidéo longue → vidéo de la Page. Facebook la télécharge depuis l'adresse publique du VPS
+    (comme Instagram), ce qui évite un envoi de plusieurs centaines de Mo depuis le conteneur."""
+    page, token = fb_page_token()
+    url = public_url(video, f"{date}-facebook.mp4")
+    r = requests.post(f"{_fb_base('graph-video.facebook.com')}/{page}/videos", timeout=300, data={
+        "file_url": url, "title": meta["title"][:255], "description": caption_text(meta, limit=5000),
+        "published": "true", "access_token": token})
+    if not r.ok:
+        raise RuntimeError(f"Facebook {r.status_code} : {r.text[:400]}")
+    vid = r.json()["id"]
+    return f"facebook video id {vid}" + _fb_wait(vid, token, "vidéo longue", minutes=25)
 
 
 # ---------------- TikTok ----------------

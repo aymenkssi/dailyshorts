@@ -27,6 +27,7 @@ SCHEMA = {
     "publish_youtube": ("PUBLISH_YOUTUBE", False, "bool"),
     "publish_instagram": ("PUBLISH_INSTAGRAM", False, "bool"),
     "publish_tiktok": ("PUBLISH_TIKTOK", False, "bool"),
+    "publish_facebook": ("PUBLISH_FACEBOOK", False, "bool"),
     "long_to_social": ("LONG_TO_SOCIAL", False, "bool"),
     "weekly_recap": ("WEEKLY_RECAP", True, "bool"),
     "recap_weekday": ("RECAP_WEEKDAY", "6", "choice:0,1,2,3,4,5,6"),

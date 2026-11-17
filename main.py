@@ -155,6 +155,10 @@ def main():
         r = str(results.get("youtube_long", ""))
         return f"▶ Full story: {r[3:]}" if r.startswith("OK ") else ""
 
+    def fb_link():
+        link = platforms.facebook_link(results.get("facebook_long", ""))
+        return f"▶ Full story: {link}" if link and str(results["facebook_long"]).startswith("OK") else ""
+
     yt = on("PUBLISH_YOUTUBE")
     targets = [  # (nom, activé, vidéo nécessaire, action)
         ("youtube_long", yt, "long",
@@ -165,6 +169,11 @@ def main():
          lambda: platforms.publish_instagram(finals["short"], scripts["short"], args.date)),
         ("tiktok", on("PUBLISH_TIKTOK"), "short",
          lambda: platforms.publish_tiktok(finals["short"], scripts["short"])),
+        # Facebook : la vidéo longue sur la Page, puis le Short en Reel avec le lien vers la longue
+        ("facebook_long", on("PUBLISH_FACEBOOK"), "long",
+         lambda: platforms.publish_facebook_video(finals["long"], scripts["long"], args.date)),
+        ("facebook", on("PUBLISH_FACEBOOK"), "short",
+         lambda: platforms.publish_facebook_reel(finals["short"], scripts["short"], extra=fb_link())),
         # option : la vidéo longue aussi sur Instagram et TikTok
         ("instagram_long", on("PUBLISH_INSTAGRAM") and on("LONG_TO_SOCIAL"), "long",
          lambda: platforms.publish_instagram(finals["long"], scripts["long"], args.date, suffix="-long")),

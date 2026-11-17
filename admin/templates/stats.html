@@ -17,6 +17,12 @@
     <div class="kpi"><span>Abonnés</span><b>{{ m.n(ig.followers) }}</b></div>
     <div class="kpi"><span>Publications</span><b>{{ m.n(ig.media) }}</b></div></div>{% endif %}
 </div>
+<div class="card"><h2>Facebook</h2>
+  {% if fb.error %}<p><span class="pill warn">{{ 'non connecté' if fb.error == 'non connecté' else 'indisponible' }}</span></p>{% if fb.error != 'non connecté' %}<p class="small">{{ fb.error }}</p>{% endif %}
+  {% else %}<p class="mute small">{{ fb.name }}</p><div class="kpis">
+    <div class="kpi"><span>Abonnés</span><b>{{ m.n(fb.followers) }}</b></div>
+    <div class="kpi"><span>Vidéos (30 j)</span><b>{{ m.n(fb_rows|length) }}</b></div></div>{% endif %}
+</div>
 <div class="card"><h2>TikTok</h2>
   {% if tt.error %}<p><span class="pill warn">{{ 'non connecté' if tt.error == 'non connecté' else 'indisponible' }}</span></p>{% if tt.error != 'non connecté' %}<p class="small">{{ tt.error }}</p>{% endif %}
   {% else %}<p class="mute small">{{ tt.name }}</p><div class="kpis">
@@ -25,8 +31,6 @@
     <div class="kpi"><span>Vidéos</span><b>{{ m.n(tt.videos) }}</b></div></div>{% endif %}
 </div>
 </div>
-{% macro fmt(f) -%}<span class="pill {{ 'ok' if f == 'Short' else '' }}">{{ f }}</span>{%- endmacro %}
-
 {% macro fmt(f) -%}<span class="pill {{ 'ok' if f == 'Short' else '' }}">{{ f }}</span>{%- endmacro %}
 
 <div class="card" style="margin-top:16px"><h2>YouTube — vidéos des 30 derniers jours</h2>
@@ -53,6 +57,20 @@
 {% if ig.views_note %}<p class="hint">{{ ig.views_note }}</p>{% endif %}
 {% elif ig.error %}<p class="mute">Disponible une fois Instagram connecté.</p>
 {% else %}<p class="mute">Aucune vidéo publiée sur Instagram par le pipeline pour l'instant.</p>{% endif %}
+</div>
+
+<div class="card" style="margin-top:16px"><h2>Facebook — vidéos des 30 derniers jours</h2>
+{% if fb_rows and not fb.error %}<div class="scroll"><table>
+<tr><th>Date</th><th>Format</th><th>Titre</th><th class="num">Vues</th><th class="num">J'aime</th><th class="num">Commentaires</th></tr>
+{% for r in fb_rows %}{% set v = fb.per_video.get(r.id) %}
+<tr><td>{{ r.day }}</td><td>{{ fmt(r.format) }}</td>
+{% if v and not v.missing %}<td><a href="{{ v.url }}" target="_blank" rel="noopener">{{ r.title or r.id }}</a></td>
+<td class="num">{{ m.n(v.views) if v.views is not none else '—' }}</td><td class="num">{{ m.n(v.likes) }}</td><td class="num">{{ m.n(v.comments) }}</td>
+{% else %}<td>{{ r.title or r.id }}</td><td class="num">—</td><td class="num">—</td><td class="num mute">introuvable</td>{% endif %}</tr>
+{% endfor %}</table></div>
+{% if fb.views_note %}<p class="hint">{{ fb.views_note }}</p>{% endif %}
+{% elif fb.error %}<p class="mute">Disponible une fois la Page Facebook connectée.</p>
+{% else %}<p class="mute">Aucune vidéo publiée sur Facebook par le pipeline pour l'instant.</p>{% endif %}
 </div>
 
 <div class="card" style="margin-top:16px"><h2>TikTok — dernières vidéos</h2>
