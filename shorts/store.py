@@ -28,6 +28,9 @@ SCHEMA = {
     "publish_instagram": ("PUBLISH_INSTAGRAM", False, "bool"),
     "publish_tiktok": ("PUBLISH_TIKTOK", False, "bool"),
     "long_to_social": ("LONG_TO_SOCIAL", False, "bool"),
+    "weekly_recap": ("WEEKLY_RECAP", True, "bool"),
+    "recap_weekday": ("RECAP_WEEKDAY", "6", "choice:0,1,2,3,4,5,6"),
+    "recap_seconds": ("RECAP_SECONDS", 360, "int"),
     "tiktok_mode": ("TIKTOK_MODE", "inbox", "choice:inbox,direct"),
     "youtube_privacy": ("YOUTUBE_PRIVACY", "private", "choice:private,unlisted,public"),
     "require_approval": ("REQUIRE_APPROVAL", False, "bool"),
@@ -35,7 +38,7 @@ SCHEMA = {
     "kokoro_voice": ("KOKORO_VOICE", "am_michael", "choice:am_michael,am_fenrir,am_puck,bm_george,bm_fable"),
     "music_volume": ("MUSIC_VOLUME", 0.10, "float"),
 }
-LIMITS = {"long_seconds": (60, 600), "short_seconds": (15, 90), "music_volume": (0.0, 1.0)}
+LIMITS = {"recap_seconds": (120, 600), "long_seconds": (60, 600), "short_seconds": (15, 90), "music_volume": (0.0, 1.0)}
 
 
 def _read(path, default):

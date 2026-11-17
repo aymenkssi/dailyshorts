@@ -3,6 +3,10 @@
 <span class="pill {{ cls }}">{{ st }}</span>
 {%- endmacro %}
 
+{% macro kind_badge(d) -%}
+{% if (d.scripts.get('long') or {}).get('kind') == 'recap' %} <span class="pill">Récap de la semaine</span>{% endif %}
+{%- endmacro %}
+
 {% macro post(action, label, csrf, cls='', confirm='') -%}
 <form method="post" action="{{ action }}"{% if confirm %} data-confirm="{{ confirm }}"{% endif %}>
 <input type="hidden" name="csrf" value="{{ csrf }}"><button class="{{ cls }}">{{ label }}</button></form>

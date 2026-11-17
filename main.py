@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 sys.path.insert(0, str(ROOT))
 
-from shorts import editing, media_gen, script_writer, store  # noqa: E402
+from shorts import editing, media_gen, news, script_writer, store  # noqa: E402
 from publish import platforms  # noqa: E402
 
 store.apply_env()  # les réglages enregistrés depuis l'admin priment sur le .env
@@ -50,7 +50,8 @@ def produce(kind, script, out):
     narration = " ".join(s["narration"].strip() for s in scenes)
     voice, words = media_gen.synthesize_voice(narration, out)
     print(f"[{kind}] images…")
-    prompts = [script_writer.full_image_prompt(s, kind) for s in scenes]
+    recap = script.get("kind") == "recap"
+    prompts = [script_writer.full_image_prompt(s, kind, recap=recap) for s in scenes]
     # secours pour le Short si le quota d'images est épuisé : les images de la vidéo longue
     spare = sorted((out.parent / "long" / "images").glob("scene_*.jpg")) if kind == "short" else ()
     images = media_gen.generate_images(prompts, out / "images", size, spare=spare)
@@ -61,6 +62,28 @@ def produce(kind, script, out):
                              layout=layout)
     print(f"[{kind}] vidéo : {final} ({editing.media_duration(final):.0f} s)")
     return final
+
+
+def recap_scripts(day_iso):
+    """Le jour du récapitulatif : scripts de l'actualité de la semaine, ou None (vidéo d'histoire)."""
+    day = dt.date.fromisoformat(day_iso)
+    if not on("WEEKLY_RECAP") or day.weekday() != int(os.environ.get("RECAP_WEEKDAY", 6)):
+        return None
+    print("Récapitulatif de la semaine : lecture de l'actualité (Wikipédia, Current events)…")
+    digest, covered = news.week_digest(day, days=int(os.environ.get("RECAP_DAYS", 6)))
+    if len(covered) < 3:
+        print(f"  seulement {len(covered)} jour(s) d'actualité récupéré(s) : vidéo d'histoire à la place")
+        return None
+    start, end = covered[0], covered[-1]
+    recap = script_writer.fact_check_recap(script_writer.write_recap(
+        digest, start, end, seconds=int(os.environ.get("RECAP_SECONDS", 360))), digest)
+    recap["description"] = recap.get("description", "").rstrip() + "\n\n" + news.SOURCE_CREDIT
+    recap["category_id"] = "25"  # YouTube : Actualités et politique
+    teaser = script_writer.write_teaser(recap, seconds=int(os.environ.get("SHORT_SECONDS", 40)), recap=True)
+    teaser["kind"] = "recap"
+    teaser["description"] = teaser.get("description", "").rstrip() + "\n\n" + news.SOURCE_CREDIT
+    teaser["category_id"] = "25"
+    return {"long": recap, "short": teaser}
 
 
 def main():
@@ -87,19 +110,24 @@ def main():
         scripts = json.loads(script_file.read_text())
     else:
         print("Scripts…")
-        queue = store.get_topics()  # sujets de la file de l'admin, sinon l'IA choisit
-        imposed = queue[0]["topic"] if queue else None
-        if imposed:
-            print(f"Sujet imposé : {imposed}")
-        long_script = script_writer.fact_check(script_writer.write_long(
-            [h["topic"] for h in history], seconds=int(os.environ.get("LONG_SECONDS", 240)),
-            topic=imposed, niche=os.environ.get("CHANNEL_NICHE", "")))
-        teaser = script_writer.write_teaser(long_script, seconds=int(os.environ.get("SHORT_SECONDS", 40)))
-        scripts = {"long": long_script, "short": teaser}
+        imposed = None
+        scripts = recap_scripts(args.date)  # le jour du récapitulatif ; sinon None
+        if scripts is None:
+            queue = store.get_topics()  # sujets de la file de l'admin, sinon l'IA choisit
+            imposed = queue[0]["topic"] if queue else None
+            if imposed:
+                print(f"Sujet imposé : {imposed}")
+            long_script = script_writer.fact_check(script_writer.write_long(
+                [h["topic"] for h in history], seconds=int(os.environ.get("LONG_SECONDS", 240)),
+                topic=imposed, niche=os.environ.get("CHANNEL_NICHE", "")))
+            teaser = script_writer.write_teaser(long_script, seconds=int(os.environ.get("SHORT_SECONDS", 40)))
+            scripts = {"long": long_script, "short": teaser}
         script_file.write_text(json.dumps(scripts, indent=2, ensure_ascii=False))
         if imposed:
             store.pop_topic()  # retiré de la file seulement une fois le script écrit
     print(f"Sujet : {scripts['long']['topic']}")
+    if scripts["long"].get("kind") == "recap":
+        print("Format : récapitulatif de l'actualité de la semaine")
 
     # 2. Production des deux vidéos ; l'échec de l'une n'empêche pas l'autre
     finals, missing = {}, []

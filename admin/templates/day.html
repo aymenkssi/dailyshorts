@@ -2,7 +2,7 @@
 {% block title %}{{ d.day }}{% endblock %}
 {% block body %}
 <p class="small"><a href="/videos">← Toutes les vidéos</a></p>
-<h1>{{ d.day }} {{ m.state(d.state) }}</h1>
+<h1>{{ d.day }} {{ m.state(d.state) }}{{ m.kind_badge(d) }}</h1>
 {% if d.title %}<p><b>{{ d.title }}</b><br><span class="mute small">Sujet : {{ d.topic }}</span></p>{% endif %}
 <div class="card" style="margin-bottom:16px">
   {% if d.videos.long or d.videos.short %}<div class="players">

@@ -11,6 +11,7 @@
 | Images (~55 en 16:9 + ~10 en 9:16, style anime) | Cloudflare FLUX.2 klein | FreeLLMAPI (NVIDIA, SiliconFlow…) |
 | Voix off + minutage des mots | Kokoro, dans le conteneur | — |
 | Montage | ffmpeg + Pillow : zoom/pan fluide, sous-titres mot à mot (1920×1080 et 1080×1920) | — |
+| Récapitulatif hebdomadaire | Wikipédia « Current events » (6 jours), script neutre vérifié contre la source, images symboliques sans personne réelle | vidéo d'histoire si l'actualité est indisponible |
 | Publication | YouTube : vidéo longue + Short (avec le lien vers la longue) ; Instagram et TikTok : le Short | chaque cible indépendante |
 
 Coût : 0 €. Le quota gratuit Cloudflare (10 000 « neurons »/jour) couvre les deux vidéos (~7 000) ; s'il est épuisé, les images passent par FreeLLMAPI. Pas d'animation IA des personnages : aucun service gratuit ne le permet au quotidien.

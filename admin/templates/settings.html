@@ -41,6 +41,18 @@
   <textarea id="n" name="niche" rows="3" maxlength="600" placeholder="Ex. : sciences et inventions du monde arabo-musulman médiéval, ton respectueux, pas de sujets militaires">{{ s.niche }}</textarea>
   <p class="hint">Consigne ajoutée à chaque script, en plus du thème « histoire méconnue ».</p>
 </div>
+<div class="card"><h2>Récapitulatif de l'actualité</h2>
+  <label class="check"><input type="checkbox" name="weekly_recap" {{ 'checked' if s.weekly_recap }}> Un récapitulatif mondial chaque semaine</label>
+  <p class="hint">Ce jour-là, il remplace la vidéo d'histoire (le quota gratuit d'images ne permet pas les deux). Source : Wikipédia, « Current events », sur les 6 jours précédents.</p>
+  <div class="row2">
+    <div><label for="rw">Jour</label>
+      <select id="rw" name="recap_weekday">
+        {% for v, l in (('0','Lundi'),('1','Mardi'),('2','Mercredi'),('3','Jeudi'),('4','Vendredi'),('5','Samedi'),('6','Dimanche')) %}<option value="{{ v }}" {{ 'selected' if s.recap_weekday == v }}>{{ l }}</option>{% endfor %}
+      </select></div>
+    <div><label for="rs">Durée (s)</label><input id="rs" type="number" name="recap_seconds" min="120" max="600" step="10" value="{{ s.recap_seconds }}"></div>
+  </div>
+  <p class="hint">Les images restent symboliques (lieux, objets, foules anonymes) : jamais de personne réelle reconnaissable.</p>
+</div>
 <div class="card"><h2>Voix et musique</h2>
   <label for="v">Voix</label>
   <select id="v" name="kokoro_voice">

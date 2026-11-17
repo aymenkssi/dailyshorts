@@ -130,10 +130,32 @@ Constraints:
     return _call(WRITER, user, max_tokens=14000, min_words=int(words * 0.75))
 
 
-def write_teaser(long_script, seconds=40):
-    """Short vertical d'accroche tiré de la vidéo longue : intrigue sans dévoiler la fin."""
+def write_teaser(long_script, seconds=40, recap=False):
+    """Short vertical d'accroche tiré de la vidéo longue : intrigue sans dévoiler la fin.
+    recap=True : Short du récapitulatif de la semaine (les titres forts, renvoi vers la vidéo complète)."""
     words = int(seconds * 2.5)
     story = " ".join(sc["narration"] for sc in long_script["scenes"])
+    if recap:
+        user = f"""Here is the narration of this week's world news recap, titled "{long_script['title']}":
+
+{story}
+
+Write a vertical teaser Short (about {seconds} s, ~{words} words) for this recap, in English.
+
+Constraints:
+- First scene = hook in under 3 seconds ("Here is what changed the world this week").
+- Present the 3 most important stories of the recap, one or two scenes each, factual and neutral.
+- Last scene's narration must be exactly: "The full weekly recap is on our channel."
+- {max(6, words // 11)} to {max(8, words // 8)} scenes; each scene's narration is 6-12 words.
+- Use only facts present in the narration above, with the same wording for numbers and names.
+- "title": a punchy, neutral title (max 80 chars, no hashtags, no clickbait about tragedies).
+- image_prompt: symbolic vertical scene (place, landscape, object, anonymous crowd). Never a real,
+  named or recognisable person, politician or celebrity; no flags burning, no blood, no weapons aimed at people.
+
+{SCHEMA_HINT}"""
+        teaser = _call(WRITER, user, min_words=int(words * 0.6))
+        teaser["topic"] = long_script["topic"]
+        return teaser
     user = f"""Here is the narration of today's long-form video, titled "{long_script['title']}":
 
 {story}
@@ -156,6 +178,74 @@ Constraints:
     return teaser
 
 
+NEWS_WRITER = (
+    "You write a weekly world news recap for a YouTube channel, narrated over anime-style illustrations. "
+    "You are a careful, neutral news editor: you report only what the provided source says, attribute "
+    "claims and casualty figures to their source, never speculate, never take sides, and give "
+    "proportionate weight to every region of the world."
+)
+
+
+def write_recap(digest, start, end, seconds=360):
+    """Récapitulatif de l'actualité mondiale de la semaine, à partir du résumé Wikipédia."""
+    words = int(seconds * 2.5)
+    user = f"""Source: Wikipedia "Current events" entries from {start:%d %B %Y} to {end:%d %B %Y}.
+Each bullet is a sourced news item; outlet names are in parentheses.
+
+<source>
+{digest}
+</source>
+
+Write this week's world news recap video (horizontal, about {seconds // 60} minutes) in English.
+
+Constraints:
+- Total narration: about {words} words (~{seconds} s spoken). A script under {int(words * 0.75)} words will be rejected.
+- Pick the 6 to 8 most significant stories for a worldwide audience, across several regions and themes
+  (conflicts, politics, economy, science, climate, culture). One clear segment per story.
+- Opening: one scene that says this is the world news recap for the week of {start:%d %B} to {end:%d %B %Y}.
+- Use ONLY facts stated in the source: no added numbers, names, causes or predictions. If the source
+  attributes a claim ("according to", "the ministry says"), keep the attribution.
+- Neutral wording: no adjectives that judge, no opinions, no jokes about victims.
+- Closing scene: "That was the week. See you next Sunday for the next recap."
+- {words // 12} to {words // 9} scenes; each scene's narration is 8-16 words and is one continuous visual shot.
+- Concatenating all scene narrations must give the full script, in order.
+- image_prompt: a symbolic scene for the story (a place, a landscape, a building, an object, a map, an
+  anonymous crowd). NEVER a real, named or recognisable person (no politicians, leaders, celebrities,
+  victims); no blood, no gore, no weapons aimed at people, no national flags being destroyed.
+- "topic": "World news recap {start:%d %b} - {end:%d %b %Y}".
+- "title": neutral and informative, max 90 chars, e.g. "World News Recap: <two biggest stories> ({start:%b %d}-{end:%d})".
+- "hashtags": include worldnews, news, weeklyrecap.
+
+{SCHEMA_HINT}"""
+    script = _call(NEWS_WRITER, user, max_tokens=16000, min_words=int(words * 0.75))
+    script["kind"] = "recap"
+    return script
+
+
+def fact_check_recap(script, digest):
+    """Vérifie chaque phrase du récapitulatif contre la source ; retire ce qui n'y figure pas."""
+    system = (
+        "You are a rigorous news fact-checker. You receive a source (Wikipedia Current events entries) and a "
+        "news recap script as JSON. Every statement in the narration must be supported by the source: fix "
+        "numbers, names, places and attributions that differ; rewrite or remove anything not in the source; "
+        "remove any opinion or loaded wording. Also make sure no image_prompt depicts a real, named or "
+        "recognisable person. Keep the same structure, number of scenes, length and all other fields. "
+        + SCHEMA_HINT
+    )
+    user = f"<source>\n{digest}\n</source>\n\n<script>\n{json.dumps(script, ensure_ascii=False)}\n</script>"
+    try:
+        checked = _call(system, user, purpose="check", max_tokens=16000,
+                        min_words=int(_word_count(script) * 0.85))
+        n = len(script["scenes"])
+        if abs(len(checked["scenes"]) - n) > max(2, n // 10):
+            raise RuntimeError("le vérificateur a trop modifié la structure")
+        checked["kind"] = "recap"
+        return checked
+    except Exception as e:  # noqa: BLE001
+        print(f"  vérification impossible, script initial conservé : {e}")
+        return script
+
+
 def fact_check(script):
     system = (
         "You are a rigorous history fact-checker. You receive a video script as JSON. "
@@ -175,5 +265,7 @@ def fact_check(script):
         return script
 
 
-def full_image_prompt(scene, kind="short"):
-    return f"{scene['image_prompt']}. {STYLE.format(framing=FRAMING[kind])}"
+def full_image_prompt(scene, kind="short", recap=False):
+    extra = (", symbolic news illustration, anonymous figures only, no recognisable real people, "
+             "no logos, no blood") if recap else ""
+    return f"{scene['image_prompt']}. {STYLE.format(framing=FRAMING[kind])}{extra}"

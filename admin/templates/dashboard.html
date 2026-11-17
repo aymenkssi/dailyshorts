@@ -3,7 +3,7 @@
 {% block body %}
 <h1>Tableau de bord</h1>
 <div class="card" style="margin-bottom:16px">
-  <h2>Aujourd'hui — {{ today.day }} {{ m.state(today.state) }}</h2>
+  <h2>Aujourd'hui — {{ today.day }} {{ m.state(today.state) }}{{ m.kind_badge(today) }}</h2>
   {% if today.title %}<p><b>{{ today.title }}</b><br><span class="mute small">Sujet : {{ today.topic }}</span></p>
   {% else %}<p class="mute">Les vidéos du jour ne sont pas encore créées (création prévue à {{ s.generate_at }}).</p>{% endif %}
   {% if today.videos.long or today.videos.short %}

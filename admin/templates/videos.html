@@ -7,7 +7,7 @@
 {% for d in days %}<tr>
   <td><a href="/videos/{{ d.day }}">{{ d.day }}</a>{% if d.day == today_day %} <span class="mute small">(aujourd'hui)</span>{% endif %}</td>
   <td>{{ d.title or '—' }}<br><span class="mute small">{{ d.topic }}</span></td>
-  <td>{{ m.state(d.state) }}</td>
+  <td>{{ m.state(d.state) }}{{ m.kind_badge(d) }}</td>
   <td class="small">{% for k, v in d.published.items() %}<div>{{ k }} : {% if v.startswith('OK http') %}<a href="{{ v[3:] }}" target="_blank" rel="noopener">lien</a>{% elif v.startswith('OK') %}publié{% else %}<span class="pill bad">erreur</span>{% endif %}</div>{% else %}—{% endfor %}</td>
 </tr>{% endfor %}</table></div>
 {% else %}<p class="mute">Aucune vidéo pour l'instant.</p>{% endif %}</div>

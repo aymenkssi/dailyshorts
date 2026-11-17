@@ -67,7 +67,7 @@ def publish_youtube(video, meta, short=True, extra=""):
             "title": (meta["title"][:90] + " #shorts")[:100] if short else meta["title"][:100],
             "description": ((extra + "\n\n") if extra else "") + caption_text(meta, 4800),
             "tags": meta.get("hashtags", [])[:15],
-            "categoryId": "27",  # Education
+            "categoryId": meta.get("category_id", "27"),  # 27 Éducation, 25 Actualités
         },
         "status": {
             "privacyStatus": os.environ.get("YOUTUBE_PRIVACY", "public"),
