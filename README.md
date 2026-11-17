@@ -1,4 +1,4 @@
-# Daily Shorts — chaque jour une vidéo d'histoire de 4 min + un Short d'accroche, 100 % gratuit
+# Daily Shorts — chaque jour une vidéo d'histoire de 4 min + un Short d'accroche
 
 **Installation pas à pas : voir [DEPLOIEMENT.md](DEPLOIEMENT.md).**
 
@@ -6,15 +6,15 @@
 
 | Étape | Service (gratuit) | Secours automatique |
 |---|---|---|
-| Script de la vidéo longue, puis du Short d'accroche | FreeLLMAPI `auto:smart` (meilleur modèle gratuit dispo : Gemini, Groq, Cerebras, Mistral…) | Cloudflare gpt-oss-120b |
-| Vérification des faits | FreeLLMAPI `fusion` (plusieurs modèles + un juge) | `auto:smart`, puis Cloudflare |
-| Images (~55 en 16:9 + ~10 en 9:16, style anime) | Cloudflare FLUX.2 klein | FreeLLMAPI (NVIDIA, SiliconFlow…) |
+| Script de la vidéo longue, puis du Short d'accroche | Claude (ton abonnement Pro/Max, via Claude Code), sinon FreeLLMAPI `auto:smart` (Gemini, Groq, Cerebras, Mistral…) | FreeLLMAPI, puis Cloudflare gpt-oss-120b |
+| Vérification des faits | Claude, sinon FreeLLMAPI `fusion` (plusieurs modèles + un juge) | `auto:smart`, puis Cloudflare |
+| Images (~33 en 16:9 + ~10 en 9:16, style anime) | Cloudflare FLUX.2 klein, taille la plus nette que permet le quota (jusqu'à 1920 × 1088), un portrait de référence par personnage pour garder les mêmes visages | FreeLLMAPI (NVIDIA, SiliconFlow…) |
 | Voix off + minutage des mots | Kokoro, dans le conteneur | — |
-| Montage | ffmpeg + Pillow : zoom/pan fluide, sous-titres mot à mot (1920×1080 et 1080×1920) | — |
+| Montage | ffmpeg + Pillow : zoom/pan fluide, fondus enchaînés, poussière de lumière, étalonnage et vignettage, sous-titres mot à mot (1920×1080 et 1080×1920) | — |
 | Récapitulatif hebdomadaire | Wikipédia « Current events » (6 jours), script neutre vérifié contre la source, images symboliques sans personne réelle | vidéo d'histoire si l'actualité est indisponible |
 | Publication | YouTube et Facebook : vidéo longue + Short (avec le lien vers la longue) ; Instagram et TikTok : le Short | chaque cible indépendante |
 
-Coût : 0 €. Le quota gratuit Cloudflare (10 000 « neurons »/jour) couvre les deux vidéos (~7 000) ; s'il est épuisé, les images passent par FreeLLMAPI. Pas d'animation IA des personnages : aucun service gratuit ne le permet au quotidien.
+Coût : 0 € en plus de ton abonnement Claude (facultatif). Le quota gratuit Cloudflare (10 000 « neurons »/jour) couvre les deux vidéos ; s'il est épuisé, les images passent par FreeLLMAPI. Pas d'animation IA des personnages : aucun service gratuit ne le permet au quotidien.
 
 ## Déploiement
 

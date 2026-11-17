@@ -100,6 +100,26 @@ Puis http://localhost:3001 :
 
 dash.cloudflare.com → **AI → Workers AI → Use REST API** : copie l'**Account ID**, puis **Create a Workers AI API Token** (affiché une seule fois). Gratuit, sans carte bancaire.
 
+La taille des images s'adapte au quota gratuit (10 000 « neurons » par jour) : 1920 × 1088 pour une vidéo de 4 min, un peu moins pour le récapitulatif de 6 min. `IMAGE_NEURON_BUDGET` (9 000 par défaut) fixe la part du quota réservée aux images. Le plan choisi est noté dans `output/<date>/plan.json` et dans le journal.
+
+---
+
+## 4 bis. Claude (ton abonnement Pro ou Max) — facultatif
+
+Claude écrit et vérifie les scripts ; FreeLLMAPI prend le relais si le jeton manque ou si la limite de l'abonnement est atteinte. Claude Code est déjà installé dans l'image du pipeline.
+
+1. Créer le jeton (valable un an), une seule fois :
+
+   ```bash
+   docker compose run --rm -it shorts claude setup-token
+   ```
+
+   Ouvre l'adresse affichée sur ton PC, connecte-toi à ton compte Claude, autorise, puis colle le code demandé dans le terminal. Le jeton s'affiche : copie-le.
+2. Dans `.env` : `CLAUDE_CODE_OAUTH_TOKEN=<le jeton>` (et `CLAUDE_MODEL=sonnet`, ou `opus`).
+3. `docker compose up -d shorts`, puis vérifier : `docker compose exec shorts python tools/check_services.py` → ligne `Claude (abonnement)`.
+
+Ce jeton donne accès à ton compte Claude : traite-le comme un mot de passe (jamais dans Git, `chmod 600 .env`). Il est lié à ton usage personnel : l'usage reste dans les limites de ton abonnement (environ 4 à 6 requêtes par jour), partagées avec ton usage de Claude. Pour le renouveler dans un an, refais l'étape 1. Pour le désactiver : décoche « Écrire et vérifier les scripts avec Claude » dans **Réglages**.
+
 ---
 
 ## 5. Remplir `.env`
@@ -351,5 +371,7 @@ Deux adresses, servies par Traefik :
 | YouTube `invalid_grant` | jeton révoqué ou appli restée en « Test » | étape 8.4 puis refaire l'autorisation |
 | Instagram `ERROR` | URL vidéo injoignable | refaire le test `curl -I` de l'étape 6 |
 | Facebook `(#200)` ou `(#10)` | permission ou Page non attribuée au jeton | étape 9 bis, points 4 et 5, puis `tools/facebook_check.py` |
+| `claude/sonnet : échec (… limit …)` | limite de l'abonnement atteinte | rien à faire : FreeLLMAPI a écrit le script ; Claude reprend à la remise à zéro |
+| `claude/… : échec (… OAuth … / Invalid … token)` | jeton expiré ou révoqué | étape 4 bis, point 1 |
 | Facebook `non connecté` | `FB_PAGE_ID` absent de `.env` | `tools/facebook_check.py`, puis `docker compose up -d shorts admin` |
 | TikTok `unaudited_client_can_only_post_to_private_accounts` | audit non validé | compte TikTok en privé ou `PUBLISH_TIKTOK=false` |

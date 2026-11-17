@@ -5,9 +5,10 @@ ENV PYTHONUNBUFFERED=1 \
     TZ=Europe/Paris \
     HF_HOME=/app/cache/huggingface
 
-# ffmpeg : montage ; espeak-ng : prononciation des mots inconnus (Kokoro) ; tzdata : heure de Paris
+# ffmpeg : montage ; espeak-ng : prononciation des mots inconnus (Kokoro) ; tzdata : heure de Paris ;
+# curl : installation de Claude Code
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg espeak-ng tzdata \
+ && apt-get install -y --no-install-recommends ffmpeg espeak-ng tzdata curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -26,5 +27,13 @@ RUN useradd -u 1000 -m shorts \
  && mkdir -p /app/output /app/state /app/cache /public \
  && chown -R shorts:shorts /app /public
 USER shorts
+
+# Claude Code (écriture des scripts avec ton abonnement Claude, voir DEPLOIEMENT.md).
+# En cas d'échec de l'installation, l'image reste utilisable : FreeLLMAPI écrit alors les scripts.
+ENV PATH="/home/shorts/.local/bin:${PATH}" \
+    DISABLE_AUTOUPDATER=1 \
+    CLAUDE_CONFIG_DIR=/app/cache/claude
+RUN (curl -fsSL https://claude.ai/install.sh | bash && claude --version) \
+ || echo "Claude Code non installé : les scripts passeront par FreeLLMAPI"
 
 CMD ["python", "scheduler.py"]

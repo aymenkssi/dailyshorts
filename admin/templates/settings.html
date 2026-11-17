@@ -37,10 +37,21 @@
     <div><label for="ls">Durée de la vidéo longue (s)</label><input id="ls" type="number" name="long_seconds" min="60" max="600" step="10" value="{{ s.long_seconds }}"></div>
     <div><label for="ss">Durée du Short (s)</label><input id="ss" type="number" name="short_seconds" min="15" max="90" step="5" value="{{ s.short_seconds }}"></div>
   </div>
-  <p class="hint">Au-delà de 5 minutes, le quota gratuit d'images peut manquer : certaines images seraient réutilisées.</p>
+  <p class="hint">Plus la vidéo est longue, plus il faut d'images : leur taille baisse alors pour rester dans le quota gratuit.</p>
   <label for="n">Ligne éditoriale (facultatif)</label>
   <textarea id="n" name="niche" rows="3" maxlength="600" placeholder="Ex. : sciences et inventions du monde arabo-musulman médiéval, ton respectueux, pas de sujets militaires">{{ s.niche }}</textarea>
   <p class="hint">Consigne ajoutée à chaque script, en plus du thème « histoire méconnue ».</p>
+</div>
+<div class="card"><h2>Qualité</h2>
+  <label class="check"><input type="checkbox" name="use_claude" {{ 'checked' if s.use_claude }}> Écrire et vérifier les scripts avec Claude (ton abonnement)</label>
+  <label for="cm">Modèle Claude</label>
+  <select id="cm" name="claude_model">
+    {% for v, l in (('sonnet', 'Sonnet (recommandé, économise ton abonnement)'), ('opus', 'Opus (le plus fin, consomme plus vite les limites)')) %}<option value="{{ v }}" {{ 'selected' if s.claude_model == v }}>{{ l }}</option>{% endfor %}
+  </select>
+  <p class="hint">Demande le jeton <code>CLAUDE_CODE_OAUTH_TOKEN</code> sur le serveur (voir DEPLOIEMENT.md). Si la limite de l'abonnement est atteinte, FreeLLMAPI prend le relais.</p>
+  <label class="check"><input type="checkbox" name="character_refs" {{ 'checked' if s.character_refs }}> Personnages constants (un portrait de référence par personnage)</label>
+  <label class="check"><input type="checkbox" name="particles" {{ 'checked' if s.particles }}> Poussière de lumière animée (vidéos d'histoire)</label>
+  <p class="hint">La taille des images s'adapte au quota gratuit de Cloudflare : jusqu'à 1920 × 1088, sans agrandissement flou.</p>
 </div>
 <div class="card"><h2>Récapitulatif de l'actualité</h2>
   <label class="check"><input type="checkbox" name="weekly_recap" {{ 'checked' if s.weekly_recap }}> Un récapitulatif mondial chaque semaine</label>

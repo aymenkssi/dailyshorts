@@ -46,6 +46,17 @@ if base:
 else:
     print("[--]  FreeLLMAPI non configuré (LLM_BASE_URL vide) : Cloudflare seul")
 
+if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+    from shorts import script_writer
+
+    def claude():
+        model = os.environ.get("CLAUDE_MODEL", "sonnet")
+        out = script_writer._claude("Reply with one word.", "Reply with the single word: ready", model)
+        return f"{model} → {out.strip()[:40]!r}"
+    check("Claude (abonnement)", claude)
+else:
+    print("[--]  Claude non configuré (CLAUDE_CODE_OAUTH_TOKEN vide) : FreeLLMAPI écrit les scripts")
+
 if os.environ.get("CF_ACCOUNT_ID"):
     from shorts import media_gen
     check("Cloudflare image", lambda: f"{len(media_gen._cf_image('a lighthouse at dusk, anime style', 1)) // 1024} Ko")

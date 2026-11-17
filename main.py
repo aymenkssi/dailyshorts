@@ -28,8 +28,8 @@ store.apply_env()  # les réglages enregistrés depuis l'admin priment sur le .e
 HISTORY = ROOT / "state" / "history.json"
 FORMATS = {
     # nom : (mise en page, taille des images demandées)
-    "long": (editing.LONG, (1344, 768)),
-    "short": (editing.SHORT, (768, 1344)),
+    "long": (editing.LONG, (1920, 1088)),
+    "short": (editing.SHORT, (1088, 1920)),
 }
 
 
@@ -37,9 +37,38 @@ def on(var):
     return os.environ.get(var, "false").lower() in ("1", "true", "yes")
 
 
-def produce(kind, script, out):
+def plan_images(scripts, out):
+    """Portraits de référence des personnages, puis taille des images la plus nette que permet le quota
+    gratuit du jour. Le plan est gardé dans plan.json pour qu'une relance produise les mêmes formats."""
+    plan_file = out / "plan.json"
+    recap = scripts["long"].get("kind") == "recap"
+    refs = {}
+    if on("CHARACTER_REFS") and not recap and scripts["long"].get("characters"):
+        print("Portraits de référence des personnages…")
+        refs = media_gen.generate_character_refs(scripts["long"], out / "refs")
+    if plan_file.exists():
+        plan = json.loads(plan_file.read_text())
+    else:
+        counts = {k: sum(1 for i in range(len(scripts[k]["scenes"]))
+                         if not (out / k / "images" / f"scene_{i:03d}.jpg").exists()) for k in ("long", "short")}
+        n_refs = sum(1 for k in ("long", "short") for sc in scripts[k]["scenes"]
+                     if any(n in refs for n in script_writer.characters_in(sc, scripts[k])))
+        sizes, cost = media_gen.plan_sizes(counts, refs=n_refs,
+                                           extra=media_gen.neurons((1024, 1024), len(refs)))
+        plan = {"sizes": {k: list(v) for k, v in sizes.items()}, "neurons": round(cost or 0)}
+        plan_file.write_text(json.dumps(plan, indent=1))
+    print(f"Images : vidéo longue {plan['sizes']['long'][0]}×{plan['sizes']['long'][1]}, "
+          f"Short {plan['sizes']['short'][0]}×{plan['sizes']['short'][1]}"
+          + (f", ~{plan['neurons']} neurons" if plan.get("neurons") else "")
+          + (f", personnages de référence : {', '.join(refs)}" if refs else ""))
+    return {k: tuple(v) for k, v in plan["sizes"].items()}, refs
+
+
+def produce(kind, script, out, size=None, refs=None):
     """Voix, images et montage d'une vidéo ; renvoie le chemin du fichier final."""
-    layout, size = FORMATS[kind]
+    layout, default_size = FORMATS[kind]
+    size = size or default_size
+    refs = refs or {}
     out.mkdir(parents=True, exist_ok=True)
     final = out / "final.mp4"
     if final.exists():
@@ -51,15 +80,21 @@ def produce(kind, script, out):
     voice, words = media_gen.synthesize_voice(narration, out)
     print(f"[{kind}] images…")
     recap = script.get("kind") == "recap"
-    prompts = [script_writer.full_image_prompt(s, kind, recap=recap) for s in scenes]
+    prompts, plain, scene_refs = [], [], []
+    for s in scenes:
+        names = [n for n in script_writer.characters_in(s, script) if n in refs][:4]
+        idx = {n: k for k, n in enumerate(names)}
+        prompts.append(script_writer.full_image_prompt(s, kind, recap=recap, script=script, refs=idx))
+        plain.append(script_writer.full_image_prompt(s, kind, recap=recap, script=script))
+        scene_refs.append([refs[n] for n in names])
     # secours pour le Short si le quota d'images est épuisé : les images de la vidéo longue
     spare = sorted((out.parent / "long" / "images").glob("scene_*.jpg")) if kind == "short" else ()
-    images = media_gen.generate_images(prompts, out / "images", size, spare=spare)
+    images = media_gen.generate_images(prompts, out / "images", size, spare=spare, refs=scene_refs, plain=plain)
     print(f"[{kind}] montage…")
     final = editing.assemble(scenes, images, {}, voice, words, out,
                              music_dir=ROOT / "assets" / "music",
                              music_volume=float(os.environ.get("MUSIC_VOLUME", 0.1)),
-                             layout=layout)
+                             layout=layout, particles=on("PARTICLES") and not recap)
     print(f"[{kind}] vidéo : {final} ({editing.media_duration(final):.0f} s)")
     return final
 
@@ -131,9 +166,14 @@ def main():
 
     # 2. Production des deux vidéos ; l'échec de l'une n'empêche pas l'autre
     finals, missing = {}, []
+    try:
+        sizes, refs = plan_images(scripts, out)
+    except Exception:  # noqa: BLE001  -> formats par défaut, sans référence
+        traceback.print_exc()
+        sizes, refs = {k: v[1] for k, v in FORMATS.items()}, {}
     for kind in ("long", "short"):
         try:
-            finals[kind] = produce(kind, scripts[kind], out / kind)
+            finals[kind] = produce(kind, scripts[kind], out / kind, size=sizes[kind], refs=refs)
         except Exception as e:  # noqa: BLE001
             missing.append(kind)
             print(f"[{kind}] ÉCHEC : {e}")

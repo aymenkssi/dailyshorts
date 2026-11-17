@@ -36,6 +36,10 @@ SCHEMA = {
     "youtube_privacy": ("YOUTUBE_PRIVACY", "private", "choice:private,unlisted,public"),
     "require_approval": ("REQUIRE_APPROVAL", False, "bool"),
     "niche": ("CHANNEL_NICHE", "", "text"),
+    "use_claude": ("USE_CLAUDE", True, "bool"),
+    "claude_model": ("CLAUDE_MODEL", "sonnet", "choice:sonnet,opus"),
+    "character_refs": ("CHARACTER_REFS", True, "bool"),
+    "particles": ("PARTICLES", True, "bool"),
     "kokoro_voice": ("KOKORO_VOICE", "am_michael", "choice:am_michael,am_fenrir,am_puck,bm_george,bm_fable"),
     "music_volume": ("MUSIC_VOLUME", 0.10, "float"),
 }

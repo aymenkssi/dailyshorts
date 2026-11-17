@@ -43,14 +43,49 @@ def _soften(prompt):
     return "Peaceful, family-friendly illustration, fully clothed people. " + cleaned
 
 
-def _cf_image(prompt, seed, size=(768, 1344)):
+# ---------- Résolution selon le quota gratuit ----------
+# FLUX.2 klein 4B sur Cloudflare : 26,05 « neurons » par tuile de 512×512 produite, 5,37 par image de
+# référence (moins de 512×512). Quota gratuit : 10 000 neurons par jour, remis à zéro à 00:00 UTC.
+NEURONS_PER_TILE, NEURONS_PER_REF = 26.05, 5.37
+SIZES = {  # du plus net au plus économe ; multiples de 16, 1920 au plus
+    "long": [(1920, 1088), (1664, 928), (1536, 864), (1344, 768)],
+    "short": [(1088, 1920), (928, 1664), (864, 1536), (768, 1344)],
+}
+
+
+def neurons(size, n=1, refs=0):
+    return n * NEURONS_PER_TILE * size[0] * size[1] / 512 / 512 + refs * NEURONS_PER_REF
+
+
+def plan_sizes(counts, refs=0, extra=0, budget=None):
+    """Taille d'image la plus nette possible pour chaque vidéo sans dépasser le quota du jour.
+    counts = {"long": nb d'images à générer, "short": …} ; refs = nb d'images utilisant une référence ;
+    extra = neurons déjà prévus ailleurs (portraits de référence)."""
+    budget = float(budget or os.environ.get("IMAGE_NEURON_BUDGET", 9000))
+    best = None
+    for a, la in enumerate(SIZES["long"]):
+        for b, sb in enumerate(SIZES["short"]):
+            cost = (neurons(la, counts.get("long", 0)) + neurons(sb, counts.get("short", 0))
+                    + refs * NEURONS_PER_REF + extra)
+            key = (max(a, b), a, b)  # d'abord la meilleure qualité commune, puis priorité à la vidéo longue
+            if cost <= budget and (best is None or key < best[0]):
+                best = (key, {"long": la, "short": sb}, cost)
+    if best is None:  # même la plus petite taille dépasse : le secours FreeLLMAPI prendra le relais
+        return {"long": SIZES["long"][-1], "short": SIZES["short"][-1]}, None
+    return best[1], best[2]
+
+
+def _cf_image(prompt, seed, size=(768, 1344), refs=()):
     acc, tok = os.environ["CF_ACCOUNT_ID"], os.environ["CF_API_TOKEN"]
     model = os.environ.get("CF_IMAGE_MODEL", "@cf/black-forest-labs/flux-2-klein-4b")
     url = f"https://api.cloudflare.com/client/v4/accounts/{acc}/ai/run/{model}"
     headers = {"Authorization": f"Bearer {tok}"}
-    if "flux-2" in model:  # FLUX.2 : formulaire multipart, format vertical natif
-        fields = {"prompt": prompt[:2000], "width": str(size[0]), "height": str(size[1]), "seed": str(seed)}
-        r = requests.post(url, headers=headers, files={k: (None, v) for k, v in fields.items()}, timeout=180)
+    if "flux-2" in model:  # FLUX.2 : formulaire multipart, format vertical natif, jusqu'à 4 images de référence
+        fields = {"prompt": (None, prompt[:2000]), "width": (None, str(size[0])),
+                  "height": (None, str(size[1])), "seed": (None, str(seed))}
+        for k, ref in enumerate(list(refs)[:4]):
+            fields[f"input_image_{k}"] = (Path(ref).name, Path(ref).read_bytes(), "image/jpeg")
+        r = requests.post(url, headers=headers, files=fields, timeout=180)
     else:  # flux-1-schnell : JSON, image carrée recadrée ensuite
         r = requests.post(url, headers=headers, json={"prompt": prompt[:2000], "steps": 8, "seed": seed}, timeout=180)
     _check(r)
@@ -63,7 +98,7 @@ def _cf_image(prompt, seed, size=(768, 1344)):
     return base64.b64decode(img.split(",", 1)[-1])
 
 
-def _freellmapi_image(prompt, seed=None, size=(768, 1344)):
+def _freellmapi_image(prompt, seed=None, size=(768, 1344), refs=()):
     """Secours : FreeLLMAPI route vers NVIDIA, SiliconFlow, Cloudflare (autre compte)…"""
     base = os.environ["LLM_BASE_URL"].rstrip("/")
     r = requests.post(
@@ -93,25 +128,62 @@ def _image_sources():
     return src
 
 
-def generate_images(prompts, out_dir, size=(768, 1344), spare=()):
+def generate_character_refs(script, out_dir):
+    """Un portrait de référence par personnage récurrent (3 au plus), réduit sous 512×512 comme l'exige
+    FLUX.2 klein. Renvoie {nom: chemin}. Sans Cloudflare ou en cas d'échec : {} (images sans référence)."""
+    from PIL import Image
+
+    from shorts.script_writer import character_sheet_prompt
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if not (os.environ.get("CF_ACCOUNT_ID") and os.environ.get("CF_API_TOKEN")):
+        return {}
+    refs = {}
+    for k, (name, desc) in enumerate(list((script.get("characters") or {}).items())[:3]):
+        dest = out_dir / f"ref_{k}.jpg"
+        if not dest.exists():
+            try:
+                raw = out_dir / f"ref_{k}_full.png"
+                raw.write_bytes(_retry(lambda: _cf_image(character_sheet_prompt(name, desc, script), 77 + k,
+                                                         (1024, 1024)), tries=2, wait=5))
+                Image.open(raw).convert("RGB").resize((496, 496), Image.LANCZOS).save(dest, quality=92)
+                print(f"  portrait de référence : {name}")
+            except Exception as e:  # noqa: BLE001
+                print(f"  portrait de {name} impossible ({str(e)[:200]}) : images sans référence")
+                continue
+        refs[name] = dest
+    return refs
+
+
+def generate_images(prompts, out_dir, size=(768, 1344), spare=(), refs=None, plain=None):
     """Une image par scène. Si un prompt est refusé : version adoucie, puis en dernier
     recours réutilisation de l'image voisine, pour ne jamais bloquer toute la vidéo.
+    refs[i] : images de référence (personnages) de la scène i ; plain[i] : son prompt sans référence,
+    utilisé si la requête avec référence échoue et par le secours FreeLLMAPI.
     spare : images d'une autre vidéo du même sujet, utilisées si trop d'images manquent
     (quota épuisé) ; le montage les recadre au bon format."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     sources = _image_sources()
+    refs = refs or [()] * len(prompts)
+    plain = plain or prompts
     paths, missing = [], []
     for i, prompt in enumerate(prompts):
         dest = out_dir / f"scene_{i:03d}.jpg"
         paths.append(dest)
         if dest.exists():
             continue
+        attempts = []
+        if refs[i]:
+            attempts.append((" (personnages de référence)", prompt, refs[i]))
+        attempts += [("", plain[i], ()), (" (prompt adouci)", _soften(plain[i]), ())]
         done = False
-        for label, text in (("", prompt), (" (prompt adouci)", _soften(prompt))):
+        for label, text, rf in attempts:
             for name, fn in list(sources):
+                if rf and name != "cloudflare":
+                    continue
                 try:
-                    dest.write_bytes(_retry(lambda: fn(text, 1000 + i, size), tries=2, wait=5))
+                    dest.write_bytes(_retry(lambda: fn(text, 1000 + i, size, rf), tries=2, wait=5))
                     print(f"  image {i + 1}/{len(prompts)} ok ({name}{label})")
                     done = True
                     break

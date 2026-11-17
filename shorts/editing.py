@@ -147,47 +147,121 @@ def build_captions(words, scene_ranges, total_dur, out_dir, L):
 
 # ---------- Plans ----------
 MOTIONS = ["zoom_in", "zoom_out", "pan_up", "pan_down", "zoom_in", "pan_left", "pan_right"]
+XFADE = 0.5      # durée du fondu enchaîné entre deux plans (s)
+ZOOM = 1.12      # zoom maximal d'un plan
+GRADE = "eq=contrast=1.04:saturation=1.08,vignette=angle=PI/5"   # étalonnage léger + vignettage
 
 
-def still_clip(img_path, dur, motion, out, L):
-    """Zoom/pan fluide (sous-pixel) sur une image fixe, rendu via Pillow -> ffmpeg."""
-    W, H = L.w, L.h
+def prepare(img_path, L):
+    """Image agrandie une seule fois (Lanczos + accentuation) pour que chaque image du plan soit une
+    réduction : plus nette qu'un agrandissement refait à chaque image."""
+    from PIL import ImageFilter
     src = Image.open(img_path).convert("RGB")
     sw, sh = src.size
-    # plus grand cadre au format de la vidéo dans l'image
-    if sw / sh > W / H:
-        bw, bh = sh * W / H, sh
-    else:
-        bw, bh = sw, sw * H / W
-    n = max(1, round(dur * FPS))
+    bw, bh = (sh * L.w / L.h, sh) if sw / sh > L.w / L.h else (sw, sw * L.h / L.w)  # cadre au format vidéo
+    need = L.w * ZOOM / bw  # facteur pour que le cadre le plus serré couvre encore toute la largeur
+    if need > 1.01:
+        src = src.resize((round(sw * need), round(sh * need)), Image.LANCZOS)
+        src = src.filter(ImageFilter.UnsharpMask(radius=1.6, percent=55, threshold=2))
+    return src
+
+
+def kb_frame(src, motion, p, L):
+    """Une image du plan : zoom/pan sous-pixel, p = avancement de 0 à 1 (au-delà pendant les fondus)."""
+    W, H = L.w, L.h
+    p = min(max(p, -0.1), 1.1)
+    sw, sh = src.size
+    bw, bh = (sh * W / H, sh) if sw / sh > W / H else (sw, sw * H / W)
     z0, z1, dx, dy = 1.0, 1.0, 0.0, 0.0
     if motion == "zoom_in":
-        z0, z1 = 1.0, 1.12
+        z0, z1 = 1.0, ZOOM
     elif motion == "zoom_out":
-        z0, z1 = 1.12, 1.0
+        z0, z1 = ZOOM, 1.0
     else:
-        z0 = z1 = 1.12
+        z0 = z1 = ZOOM
         amp = 0.045
         dx = {"pan_left": amp, "pan_right": -amp}.get(motion, 0.0)
         dy = {"pan_up": amp, "pan_down": -amp}.get(motion, 0.0)
+    z = max(1.0, z0 + (z1 - z0) * p)
+    cw, ch = bw / z, bh / z
+    cx = min(max(sw / 2 + (p - 0.5) * 2 * dx * sw, cw / 2), sw - cw / 2)
+    cy = min(max(sh / 2 + (p - 0.5) * 2 * dy * sh, ch / 2), sh - ch / 2)
+    return src.resize((W, H), Image.BICUBIC, box=(cx - cw / 2, cy - ch / 2, cx + cw / 2, cy + ch / 2))
 
+
+class Particles:
+    """Poussière de lumière qui flotte lentement devant l'image (ambiance « film d'animation »)."""
+
+    def __init__(self, L, seed, n=None):
+        from PIL import ImageFilter
+        rnd = random.Random(seed)
+        self.W, self.H = L.w, L.h
+        n = n or int(L.w * L.h / 60000)
+        self.items = [(rnd.uniform(0, L.w), rnd.uniform(0, L.h), rnd.uniform(-6, 6), rnd.uniform(-22, -6),
+                       rnd.choice((0, 0, 1, 1, 2)), rnd.uniform(0, 6.28), rnd.uniform(0.4, 1.0)) for _ in range(n)]
+        self.sprites = []
+        for size in (10, 16, 26):
+            m = Image.new("L", (size, size), 0)
+            ImageDraw.Draw(m).ellipse((size * .3, size * .3, size * .7, size * .7), fill=255)
+            m = m.filter(ImageFilter.GaussianBlur(size / 7))
+            levels = [m.point(lambda v, a=a: int(v * a)) for a in (0.25, 0.45, 0.65, 0.85)]
+            self.sprites.append((Image.new("RGB", (size, size), (255, 236, 196)), levels))
+
+    def draw(self, frame, t):
+        import math
+        for x0, y0, vx, vy, k, ph, amp in self.items:
+            rgb, levels = self.sprites[k]
+            x = (x0 + vx * t + 12 * math.sin(t * 0.5 + ph)) % self.W
+            y = (y0 + vy * t) % self.H
+            a = amp * (0.6 + 0.4 * math.sin(t * 1.3 + ph))
+            frame.paste(rgb, (int(x), int(y)), levels[min(3, int(a * 4))])
+
+
+def render_shots(images, timings, motions, out, L, particles=True, seed=0):
+    """Tous les plans en un seul flux, avec un fondu enchaîné à chaque changement de plan."""
+    total = timings[-1][1]
+    n_frames = max(1, round(total * FPS))
+    starts = [s for s, _ in timings]
+    cache = {}
+
+    def src(i):
+        if i not in cache:
+            for k in [k for k in cache if k < i - 1]:  # deux plans en mémoire au plus
+                del cache[k]
+            cache[i] = prepare(images[i], L)
+        return cache[i]
+
+    def shot_frame(i, t):
+        s, e = timings[i]
+        return kb_frame(src(i), motions[i], (t - s) / max(0.1, e - s), L)
+
+    dust = Particles(L, seed) if particles else None
     proc = subprocess.Popen([
-        "ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
-        "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-        "-pix_fmt", "yuv420p", str(out)], stdin=subprocess.PIPE)
-    for f in range(n):
-        p = f / max(1, n - 1)
-        z = z0 + (z1 - z0) * p
-        cw, ch = bw / z, bh / z
-        cx = sw / 2 + (p - 0.5) * 2 * dx * sw
-        cy = sh / 2 + (p - 0.5) * 2 * dy * sh
-        cx = min(max(cx, cw / 2), sw - cw / 2)
-        cy = min(max(cy, ch / 2), sh - ch / 2)
-        box = (cx - cw / 2, cy - ch / 2, cx + cw / 2, cy + ch / 2)
-        proc.stdin.write(src.resize((W, H), Image.BICUBIC, box=box).tobytes())
-    proc.stdin.close()
+        "ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{L.w}x{L.h}",
+        "-r", str(FPS), "-i", "-", "-vf", GRADE, "-c:v", "libx264", "-preset", "veryfast", "-crf", "17",
+        "-pix_fmt", "yuv420p", str(out)], stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    i = 0
+    try:
+        for f in range(n_frames):
+            t = f / FPS
+            while i + 1 < len(starts) and t >= starts[i + 1]:
+                i += 1
+            frame = shot_frame(i, t)
+            # fondu centré sur la coupe : la fin du plan précédent ou le début du suivant
+            if i > 0 and t - starts[i] < XFADE / 2:
+                a = 0.5 + (t - starts[i]) / XFADE
+                frame = Image.blend(shot_frame(i - 1, t), frame, a)
+            elif i + 1 < len(starts) and starts[i + 1] - t < XFADE / 2:
+                a = 0.5 - (starts[i + 1] - t) / XFADE
+                frame = Image.blend(frame, shot_frame(i + 1, t), a)
+            if dust:
+                dust.draw(frame, t)
+            proc.stdin.write(frame.tobytes())
+        proc.stdin.close()
+    except BrokenPipeError:
+        pass
     if proc.wait():
-        raise RuntimeError(f"ffmpeg a échoué pour {img_path}")
+        raise RuntimeError(f"ffmpeg a échoué pendant le rendu des plans : {proc.stderr.read().decode()[-300:]}")
 
 
 def animated_clip(video_path, dur, out, L):
@@ -204,30 +278,26 @@ def animated_clip(video_path, dur, out, L):
 
 
 # ---------- Montage ----------
-def assemble(scenes, images, animated, voice, words, out_dir, music_dir=None, music_volume=0.1, layout=SHORT):
+def assemble(scenes, images, animated, voice, words, out_dir, music_dir=None, music_volume=0.1, layout=SHORT,
+             particles=True):
+    """animated : conservé pour compatibilité (plus utilisé) ; particles : poussière de lumière."""
     L = layout
     out_dir = Path(out_dir)
-    clips_dir = out_dir / "clips"
-    clips_dir.mkdir(parents=True, exist_ok=True)
     audio_dur = media_duration(voice)
     timings, ranges = scene_timings(scenes, words, audio_dur)
     total = timings[-1][1]
 
     rnd = random.Random(str(out_dir))
-    clip_list = []
-    for i, (s, e) in enumerate(timings):
-        out = clips_dir / f"clip_{i:03d}.mp4"
-        if not out.exists():
-            if i in animated:
-                animated_clip(animated[i], e - s, out, L)
-            else:
-                still_clip(images[i], e - s, rnd.choice(MOTIONS), out, L)
-        clip_list.append(out)
-
-    concat = clips_dir / "clips.txt"
-    concat.write_text("".join(f"file '{c.name}'\n" for c in clip_list))
+    motions, last = [], None
+    for _ in timings:  # jamais deux fois de suite le même mouvement
+        m = rnd.choice([x for x in MOTIONS if x != last])
+        motions.append(m)
+        last = m
     video = out_dir / "video_noaudio.mp4"
-    run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat), "-c", "copy", str(video)])
+    if not video.exists():
+        tmp = out_dir / "video_noaudio.tmp.mp4"
+        render_shots(images, timings, motions, tmp, L, particles=particles, seed=str(out_dir))
+        tmp.replace(video)
 
     captions = build_captions(words, ranges, total, out_dir / "captions", L)
 
