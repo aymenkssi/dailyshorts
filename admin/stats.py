@@ -196,18 +196,29 @@ SHORT_MAX_SECONDS = 90
 
 def tiktok():
     def fetch():
-        tok = _json(STATE / os.environ.get("TIKTOK_TOKEN_FILE", "state/tiktok_token.json").split("/")[-1])
+        path = STATE / os.environ.get("TIKTOK_TOKEN_FILE", "state/tiktok_token.json").split("/")[-1]
+        tok = _json(path)
         if not tok:
             raise RuntimeError("non connecté")
-        if time.time() > tok.get("expires_at", 0):
-            raise RuntimeError("jeton expiré : il sera renouvelé à la prochaine publication")
+        if time.time() > tok.get("expires_at", 0) - 600:  # jeton de 24 h : renouvelé ici aussi
+            key = os.environ.get("TIKTOK_CLIENT_KEY", "")
+            r = requests.post("https://open.tiktokapis.com/v2/oauth/token/", timeout=30, data={
+                "client_key": key, "client_secret": os.environ.get("TIKTOK_CLIENT_SECRET", ""),
+                "grant_type": "refresh_token", "refresh_token": tok.get("refresh_token", "")}) if key else None
+            if r is None or not r.ok or "access_token" not in r.json():
+                raise RuntimeError("jeton expiré : reconnecte TikTok depuis la page Comptes")
+            d = r.json()
+            tok.update(access_token=d["access_token"], refresh_token=d.get("refresh_token", tok["refresh_token"]),
+                       expires_at=time.time() + d["expires_in"])
+            from shorts import store
+            store._write(path, tok)
         h = {"Authorization": f"Bearer {tok['access_token']}"}
         r = requests.get("https://open.tiktokapis.com/v2/user/info/", timeout=30, headers=h,
                          params={"fields": "display_name,follower_count,likes_count,video_count"})
         d = r.json()
         if r.status_code != 200 or d.get("error", {}).get("code") not in (None, "ok"):
             raise RuntimeError("droit de lecture des statistiques manquant (scope user.info.stats) : "
-                               "relance tools/tiktok_auth.py")
+                               "reconnecte TikTok depuis la page Comptes")
         u = d["data"]["user"]
         out = {"name": u.get("display_name", ""), "followers": u.get("follower_count", 0),
                "likes": u.get("likes_count", 0), "videos": u.get("video_count", 0),
@@ -219,7 +230,7 @@ def tiktok():
         vd = v.json() if v.headers.get("content-type", "").startswith("application/json") else {}
         if v.status_code != 200 or vd.get("error", {}).get("code") not in (None, "ok"):
             out["list_note"] = ("Détail par vidéo indisponible : ajoute le scope video.list à ton appli TikTok, "
-                                "puis relance tools/tiktok_auth.py.")
+                                "puis reconnecte TikTok depuis la page Comptes.")
             return out
         for it in vd.get("data", {}).get("videos", []):
             dur = it.get("duration") or 0

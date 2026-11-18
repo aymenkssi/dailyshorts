@@ -14,9 +14,10 @@ import shutil
 import sys
 import time
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse
 from zoneinfo import ZoneInfo
 
+import requests
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -346,6 +347,86 @@ def stats_page(request: Request):
                 ig=stats.instagram([r["id"] for r in ig_rows]), tt=stats.tiktok(),
                 fb=stats.facebook([r["id"] for r in fb_rows]),
                 yt_rows=yt_rows, ig_rows=ig_rows, fb_rows=fb_rows)
+
+
+# ---------------- Comptes connectés (connexion TikTok depuis l'admin) ----------------
+TT_AUTH = "https://www.tiktok.com/v2/auth/authorize/"
+TT_API = "https://open.tiktokapis.com/v2"
+TT_SCOPES = os.environ.get("TIKTOK_SCOPES", "user.info.basic,user.info.stats,video.list,video.upload")
+STATE_DIR = ROOT / "state"
+TT_TOKEN = STATE_DIR / os.environ.get("TIKTOK_TOKEN_FILE", "state/tiktok_token.json").split("/")[-1]
+TT_STATE_COOKIE = "ds_tt_state"
+
+
+def tiktok_redirect_uri():
+    return os.environ.get("TIKTOK_REDIRECT_URI", f"https://{ADMIN_DOMAIN}/tiktok/callback")
+
+
+@app.get("/comptes", response_class=HTMLResponse)
+def accounts_page(request: Request):
+    yt = (STATE_DIR / os.environ.get("YOUTUBE_TOKEN_FILE", "state/youtube_token.json").split("/")[-1]).exists()
+    ig = os.environ.get("IG_USER_ID", "") not in ("", "...")
+    fb = os.environ.get("FB_PAGE_ID", "") not in ("", "...")
+    tt = stats.tiktok() if TT_TOKEN.exists() else {"error": "non connecté"}
+    return page(request, "accounts", yt=yt, ig=ig, fb=fb, tt=tt, tt_connected=TT_TOKEN.exists(),
+                tt_ready=bool(os.environ.get("TIKTOK_CLIENT_KEY")) and os.environ.get("TIKTOK_CLIENT_KEY") != "...",
+                tt_scopes=TT_SCOPES.split(","), tt_redirect=tiktok_redirect_uri())
+
+
+@app.get("/tiktok/connect")
+def tiktok_connect():
+    """Étape 1 : envoie vers l'écran d'autorisation de TikTok (Login Kit)."""
+    key = os.environ.get("TIKTOK_CLIENT_KEY", "")
+    if not key or key == "...":
+        return back("/comptes", "TIKTOK_CLIENT_KEY manque dans .env.")
+    state = secrets.token_urlsafe(24)
+    resp = RedirectResponse(TT_AUTH + "?" + urlencode({
+        "client_key": key, "scope": TT_SCOPES, "response_type": "code",
+        "redirect_uri": tiktok_redirect_uri(), "state": state}), status_code=303)
+    resp.set_cookie(TT_STATE_COOKIE, state, max_age=600, httponly=True, secure=SECURE_COOKIE, samesite="lax", path="/tiktok")
+    return resp
+
+
+@app.get("/tiktok/callback")
+def tiktok_callback(request: Request, code: str = "", state: str = "", error: str = "", error_description: str = ""):
+    """Étape 2 : TikTok revient ici avec un code, échangé contre le jeton (enregistré dans state/)."""
+    expected = request.cookies.get(TT_STATE_COOKIE, "")
+    if error:
+        return back("/comptes", f"Connexion TikTok annulée : {error_description or error}")
+    if not code or not expected or not hmac.compare_digest(state, expected):
+        return back("/comptes", "Connexion TikTok refusée : lien expiré ou invalide, recommence.")
+    r = requests.post(f"{TT_API}/oauth/token/", timeout=60, headers={"Content-Type": "application/x-www-form-urlencoded"},
+                      data={"client_key": os.environ["TIKTOK_CLIENT_KEY"],
+                            "client_secret": os.environ.get("TIKTOK_CLIENT_SECRET", ""), "code": code,
+                            "grant_type": "authorization_code", "redirect_uri": tiktok_redirect_uri()})
+    d = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if not r.ok or "access_token" not in d:
+        return back("/comptes", f"Échec de l'échange du code TikTok : {d.get('error_description') or r.text[:200]}")
+    tok = {"access_token": d["access_token"], "refresh_token": d["refresh_token"],
+           "expires_at": time.time() + d["expires_in"], "open_id": d.get("open_id"), "scope": d.get("scope", "")}
+    store._write(TT_TOKEN, tok)
+    stats._cache.clear()
+    resp = back("/comptes", "Compte TikTok connecté.")
+    resp.delete_cookie(TT_STATE_COOKIE, path="/tiktok")
+    return resp
+
+
+@app.post("/tiktok/disconnect")
+def tiktok_disconnect():
+    """Révoque l'autorisation chez TikTok et supprime le jeton du serveur."""
+    try:
+        tok = store._read(TT_TOKEN, {})
+        if tok.get("access_token"):
+            requests.post(f"{TT_API}/oauth/revoke/", timeout=30,
+                          headers={"Content-Type": "application/x-www-form-urlencoded"},
+                          data={"client_key": os.environ.get("TIKTOK_CLIENT_KEY", ""),
+                                "client_secret": os.environ.get("TIKTOK_CLIENT_SECRET", ""),
+                                "token": tok["access_token"]})
+    except requests.RequestException:
+        pass
+    TT_TOKEN.unlink(missing_ok=True)
+    stats._cache.clear()
+    return back("/comptes", "Compte TikTok déconnecté et autorisation révoquée.")
 
 
 @app.get("/journal", response_class=HTMLResponse)

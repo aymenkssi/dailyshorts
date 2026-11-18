@@ -80,6 +80,11 @@ services:
       FB_PAGE_ID: ${FB_PAGE_ID:-}
       FB_ACCESS_TOKEN: ${FB_ACCESS_TOKEN:-}
       FB_GRAPH_VERSION: ${FB_GRAPH_VERSION:-}
+      # connexion TikTok depuis la page Comptes (Login Kit)
+      TIKTOK_CLIENT_KEY: ${TIKTOK_CLIENT_KEY:-}
+      TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:-}
+      TIKTOK_TOKEN_FILE: ${TIKTOK_TOKEN_FILE:-state/tiktok_token.json}
+      TIKTOK_SCOPES: ${TIKTOK_SCOPES:-user.info.basic,user.info.stats,video.list,video.upload}
     volumes:
       - ./state:/app/state
       - ./output:/app/output

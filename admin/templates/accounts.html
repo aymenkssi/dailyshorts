@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% import "_macros.html" as m %}
+{% block title %}Comptes{% endblock %}
+{% block body %}
+<h1>Comptes connectés <span class="mute small">· Connected accounts</span></h1>
+<p class="mute small">Les comptes sur lesquels le pipeline publie les vidéos de la chaîne. Les jetons restent sur ce serveur.</p>
+<div class="grid">
+<div class="card"><h2>TikTok</h2>
+  {% if tt_connected and not tt.error %}
+    <p><span class="pill ok">connecté · connected</span></p>
+    <p><b>{{ tt.name }}</b></p>
+    <div class="kpis">
+      <div class="kpi"><span>Abonnés</span><b>{{ m.n(tt.followers) }}</b></div>
+      <div class="kpi"><span>J'aime</span><b>{{ m.n(tt.likes) }}</b></div>
+      <div class="kpi"><span>Vidéos</span><b>{{ m.n(tt.videos) }}</b></div></div>
+    <p class="small" style="margin-top:12px"><a href="/stats">Voir les vidéos et leurs statistiques →</a></p>
+    <form method="post" action="/tiktok/disconnect" style="margin-top:12px" data-confirm="Déconnecter TikTok et révoquer l'autorisation ?">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><button>Déconnecter · Disconnect</button></form>
+  {% elif tt_connected %}
+    <p><span class="pill warn">à reconnecter</span></p><p class="small">{{ tt.error }}</p>
+    <p style="margin-top:12px"><a class="btn primary" href="/tiktok/connect">Reconnecter TikTok · Reconnect</a></p>
+  {% else %}
+    <p><span class="pill warn">non connecté · not connected</span></p>
+    {% if tt_ready %}<p style="margin-top:12px"><a class="btn primary" href="/tiktok/connect">Se connecter avec TikTok · Continue with TikTok</a></p>
+    {% else %}<p class="small">Ajoute <code>TIKTOK_CLIENT_KEY</code> et <code>TIKTOK_CLIENT_SECRET</code> dans <code>.env</code>.</p>{% endif %}
+  {% endif %}
+  <p class="hint">Autorisations demandées · requested scopes : {% for sc in tt_scopes %}<code>{{ sc }}</code>{{ ', ' if not loop.last }}{% endfor %}.
+  <code>user.info.basic</code> : nom du compte ; <code>user.info.stats</code> : abonnés et J'aime ; <code>video.list</code> : vidéos et leurs vues ;
+  <code>video.upload</code> : envoi de la vidéo du jour en brouillon dans ta boîte de réception TikTok, que tu publies depuis l'appli.</p>
+  <p class="hint">Adresse de retour à déclarer dans Login Kit : <code>{{ tt_redirect }}</code></p>
+</div>
+<div class="card"><h2>YouTube</h2>
+  <p><span class="pill {{ 'ok' if yt else 'warn' }}">{{ 'connecté' if yt else 'non connecté' }}</span></p>
+  <p class="hint">Autorisation par <code>tools/youtube_auth.py</code> (voir DEPLOIEMENT.md).</p></div>
+<div class="card"><h2>Instagram</h2>
+  <p><span class="pill {{ 'ok' if ig else 'warn' }}">{{ 'connecté' if ig else 'non connecté' }}</span></p>
+  <p class="hint">Jeton Meta dans <code>.env</code> (<code>IG_USER_ID</code>, <code>IG_ACCESS_TOKEN</code>).</p></div>
+<div class="card"><h2>Facebook</h2>
+  <p><span class="pill {{ 'ok' if fb else 'warn' }}">{{ 'connecté' if fb else 'non connecté' }}</span></p>
+  <p class="hint">Page Facebook : <code>FB_PAGE_ID</code> dans <code>.env</code>, même jeton qu'Instagram.</p></div>
+</div>
+{% endblock %}

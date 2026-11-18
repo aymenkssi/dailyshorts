@@ -375,3 +375,13 @@ Deux adresses, servies par Traefik :
 | `claude/… : échec (… OAuth … / Invalid … token)` | jeton expiré ou révoqué | étape 4 bis, point 1 |
 | Facebook `non connecté` | `FB_PAGE_ID` absent de `.env` | `tools/facebook_check.py`, puis `docker compose up -d shorts admin` |
 | TikTok `unaudited_client_can_only_post_to_private_accounts` | audit non validé | compte TikTok en privé ou `PUBLISH_TIKTOK=false` |
+
+
+## Connecter TikTok depuis l'admin (page « Comptes »)
+
+1. Dans le portail TikTok for Developers > ton appli > **Login Kit**, déclare l'adresse de retour :
+   `https://daily.creationapp.academy/tiktok/callback` (et le domaine du site, `/terms`, `/privacy`).
+2. `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` dans `.env`, puis `docker compose up -d --build admin`.
+3. Admin > **Comptes** > « Se connecter avec TikTok » : le jeton est enregistré dans `state/` (le pipeline le réutilise et le renouvelle).
+   « Déconnecter » révoque l'autorisation chez TikTok.
+4. Scopes demandés : `user.info.basic`, `user.info.stats`, `video.list`, `video.upload` (modifiable via `TIKTOK_SCOPES`).
