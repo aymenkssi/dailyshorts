@@ -125,6 +125,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=dt.date.today().isoformat())
     ap.add_argument("--no-publish", action="store_true")
+    ap.add_argument("--platforms", default="", help="ne publier que sur ces plateformes (youtube,instagram,tiktok,facebook)")
+    ap.add_argument("--force", action="store_true",
+                    help="avec --platforms : renvoyer même si c'est déjà publié ou si la plateforme est coupée")
     args = ap.parse_args()
 
     out = ROOT / "output" / args.date
@@ -220,9 +223,16 @@ def main():
         ("tiktok_long", on("PUBLISH_TIKTOK") and on("LONG_TO_SOCIAL"), "long",
          lambda: platforms.publish_tiktok(finals["long"], scripts["long"])),
     ]
+    only = {p.strip() for p in args.platforms.split(",") if p.strip()}
     failed = bool(missing)  # une vidéo manquante = journée incomplète, on publie quand même ce qui existe
     for name, enabled, kind, fn in targets:
-        if not enabled or kind not in finals or str(results.get(name, "")).startswith("OK"):
+        if only and name.split("_")[0] not in only:
+            continue
+        if only and args.force:
+            enabled = enabled or kind == "short"  # renvoi manuel : le Short, même si la plateforme est coupée
+        elif str(results.get(name, "")).startswith("OK"):
+            continue
+        if not enabled or kind not in finals:
             continue
         try:
             results[name] = "OK " + fn()
@@ -232,6 +242,9 @@ def main():
             traceback.print_exc()
         print(f"{name} : {results[name]}")
         results_file.write_text(json.dumps(results, indent=1))
+    if only:
+        # publication partielle (heure propre à une plateforme) : le planificateur décide de la suite
+        sys.exit(1 if failed else 0)
     if not failed:
         # toutes les publications de la journée ont réussi (y compris après une relance manuelle)
         store.set_flag(args.date, "failed", False)

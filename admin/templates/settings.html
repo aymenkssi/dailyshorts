@@ -18,6 +18,14 @@
   <label class="check"><input type="checkbox" name="publish_instagram" {{ 'checked' if s.publish_instagram }}> Instagram (Short)</label>
   <label class="check"><input type="checkbox" name="publish_tiktok" {{ 'checked' if s.publish_tiktok }}> TikTok (Short)</label>
   <label class="check"><input type="checkbox" name="publish_facebook" {{ 'checked' if s.publish_facebook }}> Facebook (vidéo longue + Short en Reel)</label>
+  <label for="pt">Heure de publication par plateforme</label>
+  <div class="row2">
+    <div><label for="pt-youtube" class="small">YouTube</label><input id="pt-youtube" type="time" name="publish_at_youtube" value="{{ s.publish_at_youtube }}"></div>
+    <div><label for="pt-instagram" class="small">Instagram</label><input id="pt-instagram" type="time" name="publish_at_instagram" value="{{ s.publish_at_instagram }}"></div>
+    <div><label for="pt-tiktok" class="small">TikTok</label><input id="pt-tiktok" type="time" name="publish_at_tiktok" value="{{ s.publish_at_tiktok }}"></div>
+    <div><label for="pt-facebook" class="small">Facebook</label><input id="pt-facebook" type="time" name="publish_at_facebook" value="{{ s.publish_at_facebook }}"></div>
+  </div>
+  <p class="hint">Laisse vide pour utiliser l'heure de publication générale ({{ s.publish_at }}). Une plateforme dont l'heure est passée publie dès la création des vidéos.</p>
   <label for="tm">Mode TikTok</label>
   <select id="tm" name="tiktok_mode">
     <option value="inbox" {{ 'selected' if s.tiktok_mode == 'inbox' }}>Brouillon dans ma boîte TikTok (je publie depuis l'appli)</option>

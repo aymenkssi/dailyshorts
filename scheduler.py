@@ -2,6 +2,7 @@
 
 - generate_at : création des vidéos du jour, sans publier
 - publish_at  : publication des vidéos du jour (si la validation est exigée : seulement une fois approuvées)
+- publish_at_<plateforme> : heure propre à YouTube, Instagram, TikTok ou Facebook (vide = publish_at)
 
 Il relit les réglages chaque minute, rattrape une étape manquée au démarrage, réessaie en cas
 d'échec (main.py reprend là où il s'était arrêté), obéit aux actions de l'admin (approuver,
@@ -119,12 +120,30 @@ def at(day_date, hhmm):
     return dt.datetime.combine(day_date, dt.time.fromisoformat(hhmm), TZ)
 
 
+def platform_times(s, d):
+    """Heure de publication de chaque plateforme activée (l'heure générale si elle n'a pas la sienne)."""
+    return {p: at(d, s[f"publish_at_{p}"] or s["publish_at"]) for p in store.PLATFORMS if s[f"publish_{p}"]}
+
+
+def settled(day, platform, ok_only=False):
+    """Une plateforme est réglée quand un résultat est enregistré pour elle (ok_only : réussi seulement)."""
+    res = store._read(store.day_dir(day) / "published.json", {})
+    return any(k.split("_")[0] == platform and v and (not ok_only or str(v).startswith("OK"))
+               for k, v in res.items())
+
+
 def tick():
     """Une décision du planificateur. Renvoie True si une étape a été exécutée."""
     s = store.get_settings()
     now = dt.datetime.now(TZ)
     day = now.date().isoformat()
     has = lambda name: store.has_flag(day, name)  # noqa: E731
+
+    if has("send_tiktok") and store.day_dir(day).exists():
+        # renvoi manuel du Short sur TikTok (bouton de l'admin), même pour une journée déjà publiée
+        run_step(day, "envoi TikTok", ["--platforms", "tiktok", "--force"])
+        store.set_flag(day, "send_tiktok", False)
+        return True
 
     published = has("done") or has("failed")
     generated = published or has("generated") or has("gen_tried")
@@ -143,20 +162,37 @@ def tick():
         return False
 
     forced = has("publish_now")
-    if not forced and now < pub_time:
-        note(f"prochaine étape : {(gen_time if now < gen_time else pub_time):%Y-%m-%d %H:%M}")
-        return False
+    times = platform_times(s, now.date())
     if s["require_approval"] and not (has("approved") or forced):
         note(f"vidéos du {day} en attente de validation dans l'interface d'administration")
         return False
-
-    if run_step(day, "publication", []):
+    if not times:  # aucune plateforme activée
         store.set_flag(day, "done")
-    elif store.day_dir(day).exists():
-        log(f"abandon pour le {day} : relance depuis l'admin ou avec "
-            f"`docker compose exec shorts python main.py --date {day}`")
-        store.set_flag(day, "failed")
-    store.set_flag(day, "publish_now", False)
+        return True
+    # « maintenant » reprend aussi les plateformes en échec ; l'heure prévue ne reprend que celles pas encore tentées
+    due = [p for p, t in times.items() if (forced and not settled(day, p, True)) or (now >= t and not settled(day, p))]
+    if not due:
+        pending = sorted(t for p, t in times.items() if not settled(day, p))
+        note(f"prochaine étape : {(gen_time if now < gen_time else pending[0] if pending else pub_time):%Y-%m-%d %H:%M}")
+        return False
+
+    ok = run_step(day, "publication (" + ", ".join(due) + ")", ["--platforms", ",".join(due)])
+    if store.day_dir(day).exists():
+        if not ok and not all(settled(day, p) for p in due):
+            # la création ou le lancement a échoué avant tout résultat : on s'arrête là pour ne pas boucler
+            log(f"abandon pour le {day} : relance depuis l'admin ou avec "
+                f"`docker compose exec shorts python main.py --date {day}`")
+            store.set_flag(day, "failed")
+        elif all(settled(day, p) for p in times):
+            res = store._read(store.day_dir(day) / "published.json", {})
+            if all(str(v).startswith("OK") for v in res.values()):
+                store.set_flag(day, "failed", False)
+                store.set_flag(day, "done")
+            else:
+                log(f"journée {day} close avec des échecs : relance depuis l'admin ou "
+                    f"`docker compose exec shorts python main.py --date {day}`")
+                store.set_flag(day, "failed")
+        store.set_flag(day, "publish_now", False)
     return True
 
 

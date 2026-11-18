@@ -385,3 +385,10 @@ Deux adresses, servies par Traefik :
 3. Admin > **Comptes** > « Se connecter avec TikTok » : le jeton est enregistré dans `state/` (le pipeline le réutilise et le renouvelle).
    « Déconnecter » révoque l'autorisation chez TikTok.
 4. Scopes demandés : `user.info.basic`, `user.info.stats`, `video.list`, `video.upload` (modifiable via `TIKTOK_SCOPES`).
+
+## Heure de publication par plateforme
+
+Admin > Réglages > Publication : une heure par plateforme (YouTube, Instagram, TikTok, Facebook). Vide = heure générale.
+Le planificateur publie chaque plateforme à son heure ; la journée est close quand toutes ont un résultat.
+Bouton **Envoyer à TikTok** (tableau de bord et page d'une journée) : renvoie le Short en brouillon, même déjà publié.
+Après `git pull` : `docker compose up -d --build shorts admin`.

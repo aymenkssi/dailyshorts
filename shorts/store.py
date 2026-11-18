@@ -22,6 +22,11 @@ TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 SCHEMA = {
     "generate_at": ("GENERATE_AT", "01:00", "time"),
     "publish_at": ("PUBLISH_AT", "16:47", "time"),
+    # heure propre à une plateforme ; vide = l'heure de publication générale
+    "publish_at_youtube": ("PUBLISH_AT_YOUTUBE", "", "timeopt"),
+    "publish_at_instagram": ("PUBLISH_AT_INSTAGRAM", "", "timeopt"),
+    "publish_at_tiktok": ("PUBLISH_AT_TIKTOK", "", "timeopt"),
+    "publish_at_facebook": ("PUBLISH_AT_FACEBOOK", "", "timeopt"),
     "long_seconds": ("LONG_SECONDS", 240, "int"),
     "short_seconds": ("SHORT_SECONDS", 40, "int"),
     "publish_youtube": ("PUBLISH_YOUTUBE", False, "bool"),
@@ -71,6 +76,11 @@ def _coerce(key, value):
         v = int(float(value))
     elif kind == "float":
         v = float(value)
+    elif kind == "timeopt":
+        v = str(value).strip()
+        if v and not TIME_RE.match(v):
+            raise ValueError(f"{key} : heure invalide (format HH:MM)")
+        return v
     elif kind == "time":
         v = str(value).strip()
         if not TIME_RE.match(v):
@@ -162,7 +172,8 @@ def pop_topic():
 
 
 # ---------- État d'une journée ----------
-FLAGS = ("generated", "gen_tried", "approved", "rejected", "publish_now", "done", "failed", "running")
+PLATFORMS = ("youtube", "instagram", "tiktok", "facebook")
+FLAGS = ("send_tiktok", "generated", "gen_tried", "approved", "rejected", "publish_now", "done", "failed", "running")
 
 
 def valid_day(day):
