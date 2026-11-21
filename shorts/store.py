@@ -27,6 +27,7 @@ SCHEMA = {
     "publish_at_instagram": ("PUBLISH_AT_INSTAGRAM", "", "timeopt"),
     "publish_at_tiktok": ("PUBLISH_AT_TIKTOK", "", "timeopt"),
     "publish_at_facebook": ("PUBLISH_AT_FACEBOOK", "", "timeopt"),
+    "subscribe_cta": ("SUBSCRIBE_CTA", True, "bool"),
     "long_seconds": ("LONG_SECONDS", 240, "int"),
     "short_seconds": ("SHORT_SECONDS", 40, "int"),
     "publish_youtube": ("PUBLISH_YOUTUBE", False, "bool"),

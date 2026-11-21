@@ -160,6 +160,8 @@ def main():
                 topic=imposed, niche=os.environ.get("CHANNEL_NICHE", "")))
             teaser = script_writer.write_teaser(long_script, seconds=int(os.environ.get("SHORT_SECONDS", 40)))
             scripts = {"long": long_script, "short": teaser}
+        if on("SUBSCRIBE_CTA"):
+            script_writer.add_subscribe_cta(scripts)
         script_file.write_text(json.dumps(scripts, indent=2, ensure_ascii=False))
         if imposed:
             store.pop_topic()  # retiré de la file seulement une fois le script écrit

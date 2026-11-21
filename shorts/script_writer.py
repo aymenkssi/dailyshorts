@@ -371,3 +371,36 @@ def character_sheet_prompt(name, desc, script):
     return (f"Character reference portrait of {name}: {desc}. Head and shoulders, facing the viewer, neutral "
             f"expression, plain soft background{', period: ' + setting if setting else ''}. "
             + STYLE.format(framing="centered square composition"))
+
+
+# ---------- Appel à s'abonner ----------
+CTA = {
+    "story": {
+        "mid": "If you enjoy forgotten stories like this one, subscribe. A new one arrives every day.",
+        "end": "Subscribe so you never miss the next story, and tell us in the comments what we should tell next.",
+        "short": "Follow for a new story every day.",
+    },
+    "recap": {
+        "mid": "If you want the world news in plain words, subscribe. A new recap arrives every Sunday.",
+        "end": "Subscribe so you never miss the weekly recap, and tell us in the comments what you want covered.",
+        "short": "Follow for a new recap every Sunday.",
+    },
+}
+
+
+def add_subscribe_cta(scripts):
+    """Ajoute l'appel à s'abonner, dit à voix haute : une fois au milieu de la vidéo longue (sans couper une
+    phrase), une fois à la fin ; le Short se termine par un « suivez-nous ». Sans effet s'il est déjà ajouté."""
+    kind = "recap" if scripts["long"].get("kind") == "recap" else "story"
+    text = CTA[kind]
+    long, short = scripts["long"], scripts["short"]
+    if not long.get("cta"):
+        sc = long["scenes"]
+        i = max(1, int(len(sc) * 0.45))  # milieu, après la mise en place
+        sc.insert(i, {"narration": text["mid"], "image_prompt": sc[i - 1]["image_prompt"]})
+        sc.append({"narration": text["end"], "image_prompt": sc[-1]["image_prompt"]})
+        long["cta"] = True
+    if not short.get("cta"):
+        short["scenes"].append({"narration": text["short"], "image_prompt": short["scenes"][-1]["image_prompt"]})
+        short["cta"] = True
+    return scripts

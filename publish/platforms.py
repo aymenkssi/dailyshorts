@@ -16,7 +16,8 @@ def caption_text(meta, limit=2200, max_tags=None):
     """Titre, description et hashtags. max_tags : Instagram n'accepte plus que 5 hashtags par publication."""
     tags = meta.get("hashtags", [])[:max_tags] if max_tags else meta.get("hashtags", [])
     tags = " ".join("#" + t.lstrip("#").replace(" ", "") for t in tags)
-    return f"{meta['title']}\n\n{meta['description']}\n\n{tags}"[:limit]
+    cta = "\U0001F514 Subscribe for a new story every day." if os.environ.get("SUBSCRIBE_CTA", "true") == "true" else ""
+    return f"{meta['title']}\n\n{meta['description']}\n\n{cta}\n\n{tags}".replace("\n\n\n\n", "\n\n")[:limit]
 
 
 def _duration(path):
