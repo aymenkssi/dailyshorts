@@ -278,6 +278,30 @@ def animated_clip(video_path, dur, out, L):
 
 
 # ---------- Montage ----------
+def subscribe_button(L, out):
+    """Bouton « Subscribe » (pastille rouge, cloche, mention) en PNG transparent, placé selon le format."""
+    big = L.h > L.w
+    W, H = (820, 300) if big else (600, 190)
+    k = W / 600
+    im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    bh = int(120 * k)
+    d.rounded_rectangle((6, 6, W - 6, bh + 6), radius=bh // 2, fill=(232, 30, 38, 245), outline=(255, 255, 255, 255), width=int(5 * k))
+    # cloche
+    cx, cy, r = int(82 * k), int(66 * k), int(34 * k)
+    d.pieslice((cx - r, cy - r, cx + r, cy + r), 180, 360, fill="white")
+    d.rectangle((cx - r, cy, cx + r, cy + int(r * 0.9)), fill="white")
+    d.polygon([(cx - r, cy + int(r * 0.9)), (cx + r, cy + int(r * 0.9)), (cx + int(r * 1.3), cy + int(r * 1.25)), (cx - int(r * 1.3), cy + int(r * 1.25))], fill="white")
+    d.ellipse((cx - int(r * 0.3), cy + int(r * 1.3), cx + int(r * 0.3), cy + int(r * 1.8)), fill="white")
+    f = ImageFont.truetype(str(FONT), int(54 * k))
+    d.text((int(140 * k), 6 + bh // 2), "SUBSCRIBE", font=f, fill="white", anchor="lm")
+    f2 = ImageFont.truetype(str(FONT), int(26 * k))
+    d.text((W // 2, bh + int(44 * k)), "A new story every day", font=f2, fill="white", anchor="mm",
+           stroke_width=max(3, int(5 * k)), stroke_fill=(17, 17, 17, 255))
+    im.save(out)
+    return im.size
+
+
 def assemble(scenes, images, animated, voice, words, out_dir, music_dir=None, music_volume=0.1, layout=SHORT,
              particles=True):
     """animated : conservé pour compatibilité (plus utilisé) ; particles : poussière de lumière."""
@@ -310,11 +334,29 @@ def assemble(scenes, images, animated, voice, words, out_dir, music_dir=None, mu
     final = out_dir / "final.mp4"
     cmd = ["ffmpeg", "-y", "-i", str(video), "-i", str(voice),
            "-f", "concat", "-safe", "0", "-i", str(captions)]
-    fc = (f"[2:v]fps={FPS},format=rgba[cap];"
-          f"[0:v][cap]overlay=0:{L.cap_center_y - L.cap_box_h // 2}:eof_action=pass,format=yuv420p[v];")
+    nin = 3
     if music:
         cmd += ["-stream_loop", "-1", "-i", str(music)]
-        fc += (f"[3:a]volume={music_volume},afade=t=out:st={max(0, total - 2):.2f}:d=2[m];"
+        music_idx, nin = nin, nin + 1
+    fc = (f"[2:v]fps={FPS},format=rgba[cap];"
+          f"[0:v][cap]overlay=0:{L.cap_center_y - L.cap_box_h // 2}:eof_action=pass[v0];")
+    last = "v0"
+    # bouton « Subscribe » pendant les plans d'appel à s'abonner (marqués "cta")
+    cta = [i for i, sc in enumerate(scenes) if isinstance(sc, dict) and sc.get("cta")]
+    if cta:
+        btn = out_dir / "subscribe.png"
+        bw, bh = subscribe_button(L, btn)
+        bx = (L.w - bw) // 2 if L.h > L.w else L.w - bw - 50
+        by = int(L.h * 0.70) if L.h > L.w else 50
+        for n, i in enumerate(cta):
+            a, b = timings[i][0], timings[i][1]
+            cmd += ["-loop", "1", "-framerate", str(FPS), "-t", f"{total:.3f}", "-i", str(btn)]
+            fc += (f"[{nin}:v]format=rgba,fade=t=in:st={a:.2f}:d=0.4:alpha=1,fade=t=out:st={max(a, b - 0.4):.2f}:d=0.4:alpha=1[b{n}];"
+                   f"[{last}][b{n}]overlay={bx}:{by}:enable='between(t,{a:.2f},{b:.2f})'[o{n}];")
+            last, nin = f"o{n}", nin + 1
+    fc += f"[{last}]format=yuv420p[v];"
+    if music:
+        fc += (f"[{music_idx}:a]volume={music_volume},afade=t=out:st={max(0, total - 2):.2f}:d=2[m];"
                f"[1:a][m]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]")
     else:
         fc += "[1:a]anull[a]"

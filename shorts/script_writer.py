@@ -397,10 +397,10 @@ def add_subscribe_cta(scripts):
     if not long.get("cta"):
         sc = long["scenes"]
         i = max(1, int(len(sc) * 0.45))  # milieu, après la mise en place
-        sc.insert(i, {"narration": text["mid"], "image_prompt": sc[i - 1]["image_prompt"]})
-        sc.append({"narration": text["end"], "image_prompt": sc[-1]["image_prompt"]})
+        sc.insert(i, {"narration": text["mid"], "image_prompt": sc[i - 1]["image_prompt"], "cta": True})
+        sc.append({"narration": text["end"], "image_prompt": sc[-1]["image_prompt"], "cta": True})
         long["cta"] = True
     if not short.get("cta"):
-        short["scenes"].append({"narration": text["short"], "image_prompt": short["scenes"][-1]["image_prompt"]})
+        short["scenes"].append({"narration": text["short"], "image_prompt": short["scenes"][-1]["image_prompt"], "cta": True})
         short["cta"] = True
     return scripts
