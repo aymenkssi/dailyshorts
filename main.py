@@ -88,7 +88,7 @@ def produce(kind, script, out, size=None, refs=None):
         plain.append(script_writer.full_image_prompt(s, kind, recap=recap, script=script))
         scene_refs.append([refs[n] for n in names])
     # secours pour le Short si le quota d'images est épuisé : les images de la vidéo longue
-    spare = sorted((out.parent / "long" / "images").glob("scene_*.jpg")) if kind == "short" else ()
+    spare = sorted((out.parent / "long" / "images").glob("scene_*.jpg")) if kind == "short" and not recap else ()
     images = media_gen.generate_images(prompts, out / "images", size, spare=spare, refs=scene_refs, plain=plain)
     print(f"[{kind}] montage…")
     final = editing.assemble(scenes, images, {}, voice, words, out,
@@ -119,6 +119,28 @@ def recap_scripts(day_iso):
     teaser["description"] = teaser.get("description", "").rstrip() + "\n\n" + news.SOURCE_CREDIT
     teaser["category_id"] = "25"
     return {"long": recap, "short": teaser}
+
+
+def news_short(day_iso):
+    """Lundi à samedi : le Short du jour est l'actualité des deux jours précédents (None si la source manque)."""
+    day = dt.date.fromisoformat(day_iso)
+    try:
+        print("Short d'actualité : lecture des deux derniers jours (Wikipédia, Current events)…")
+        digest, covered = news.week_digest(day, days=2)
+        if not covered:
+            print("  aucune actualité récupérée : Short d'accroche à la place")
+            return None
+        sec = int(os.environ.get("NEWS_SHORT_SECONDS", 90))
+        short = script_writer.fact_check_recap(
+            script_writer.write_news_short(digest, covered[0], covered[-1], seconds=sec), digest)
+        short["description"] = short.get("description", "").rstrip() + "\n\n" + news.SOURCE_CREDIT
+        short["category_id"] = "25"
+        short["kind"] = "recap"
+        return short
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        print(f"  Short d'actualité impossible ({e}) : Short d'accroche à la place")
+        return None
 
 
 def main():
@@ -158,7 +180,9 @@ def main():
             long_script = script_writer.fact_check(script_writer.write_long(
                 [h["topic"] for h in history], seconds=int(os.environ.get("LONG_SECONDS", 240)),
                 topic=imposed, niche=os.environ.get("CHANNEL_NICHE", "")))
-            teaser = script_writer.write_teaser(long_script, seconds=int(os.environ.get("SHORT_SECONDS", 40)))
+            teaser = news_short(args.date) if on("DAILY_NEWS_SHORT") else None
+            if teaser is None:
+                teaser = script_writer.write_teaser(long_script, seconds=int(os.environ.get("SHORT_SECONDS", 40)))
             scripts = {"long": long_script, "short": teaser}
         if on("SUBSCRIBE_CTA"):
             script_writer.add_subscribe_cta(scripts)
@@ -198,11 +222,13 @@ def main():
     def long_link():
         """Lien de la vidéo longue, ajouté à la description du Short une fois celle-ci publiée."""
         r = str(results.get("youtube_long", ""))
-        return f"▶ Full story: {r[3:]}" if r.startswith("OK ") else ""
+        label = "Today's story" if (scripts["short"].get("kind") == "recap" and scripts["long"].get("kind") != "recap") else "Full story"
+        return f"▶ {label}: {r[3:]}" if r.startswith("OK ") else ""
 
     def fb_link():
         link = platforms.facebook_link(results.get("facebook_long", ""))
-        return f"▶ Full story: {link}" if link and str(results["facebook_long"]).startswith("OK") else ""
+        label = "Today's story" if (scripts["short"].get("kind") == "recap" and scripts["long"].get("kind") != "recap") else "Full story"
+        return f"▶ {label}: {link}" if link and str(results["facebook_long"]).startswith("OK") else ""
 
     yt = on("PUBLISH_YOUTUBE")
     targets = [  # (nom, activé, vidéo nécessaire, action)

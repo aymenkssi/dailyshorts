@@ -290,6 +290,43 @@ Constraints:
     return script
 
 
+def write_news_short(digest, start, end, seconds=90):
+    """Short vertical de l'actualité des deux jours précédents, à partir du résumé Wikipédia."""
+    words = int(seconds * 2.5)
+    dates = f"{start:%d %B}" if start == end else f"{start:%d %B} and {end:%d %B %Y}"
+    user = f"""Source: Wikipedia "Current events" entries for {dates}.
+Each bullet is a sourced news item; outlet names are in parentheses.
+
+<source>
+{digest}
+</source>
+
+Write a vertical news Short (about {seconds} s, ~{words} words) in English: "the news of the last two days".
+
+Constraints:
+- Total narration: about {words} words. A script under {int(words * 0.75)} words will be rejected.
+- First scene = hook in under 3 seconds ("Here is what happened in the world in the last two days").
+- Pick the 4 to 5 most significant stories for a worldwide audience, across regions and themes; 2 or 3
+  scenes per story, the most important first.
+- Use ONLY facts stated in the source: no added numbers, names, causes or predictions. Keep attributions
+  ("according to", "the ministry says").
+- Neutral wording: no judging adjectives, no opinions, no jokes about victims.
+- Last scene's narration must be exactly: "That was the news. See you tomorrow."
+- {words // 14} to {words // 9} scenes; each scene's narration is 9-16 words and is one continuous visual shot.
+- "characters": {{}} (empty). "setting": "contemporary world, symbolic news illustration".
+- image_prompt: 25-60 words, starting with the framing, a symbolic vertical 9:16 scene for the story (place,
+  landscape, building, object, anonymous crowd). NEVER a real, named or recognisable person; no blood, no gore,
+  no weapons aimed at people, no national flags being destroyed.
+- "topic": "World news {start:%d %b} - {end:%d %b %Y}".
+- "title": neutral and informative, max 80 chars, no clickbait, no hashtags.
+- "hashtags": include worldnews, news, breakingnews.
+
+{SCHEMA_HINT}"""
+    script = _call(NEWS_WRITER, user, max_tokens=9000, min_words=int(words * 0.75))
+    script["kind"] = "recap"
+    return script
+
+
 def fact_check_recap(script, digest):
     """Vérifie chaque phrase du récapitulatif contre la source ; retire ce qui n'y figure pas."""
     system = (
@@ -380,6 +417,9 @@ CTA = {
         "end": "Subscribe so you never miss the next story, and tell us in the comments what we should tell next.",
         "short": "Follow for a new story every day.",
     },
+    "news": {  # Short d'actualité quotidien
+        "short": "Follow for the world news every day.",
+    },
     "recap": {
         "mid": "If you want the world news in plain words, subscribe. A new recap arrives every Sunday.",
         "end": "Subscribe so you never miss the weekly recap, and tell us in the comments what you want covered.",
@@ -401,6 +441,7 @@ def add_subscribe_cta(scripts):
         sc.append({"narration": text["end"], "image_prompt": sc[-1]["image_prompt"], "cta": True})
         long["cta"] = True
     if not short.get("cta"):
-        short["scenes"].append({"narration": text["short"], "image_prompt": short["scenes"][-1]["image_prompt"], "cta": True})
+        stext = CTA["news"]["short"] if (short.get("kind") == "recap" and kind == "story") else text["short"]
+        short["scenes"].append({"narration": stext, "image_prompt": short["scenes"][-1]["image_prompt"], "cta": True})
         short["cta"] = True
     return scripts

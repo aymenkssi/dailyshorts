@@ -64,6 +64,9 @@
   <p class="hint">La taille des images s'adapte au quota gratuit de Cloudflare : jusqu'à 1920 × 1088, sans agrandissement flou.</p>
 </div>
 <div class="card"><h2>Récapitulatif de l'actualité</h2>
+  <label class="check"><input type="checkbox" name="daily_news_short" {{ 'checked' if s.daily_news_short }}> Short d'actualité des deux jours précédents (lundi à samedi)</label>
+  <div class="row2"><div><label for="ns">Durée du Short d'actualité (s)</label><input id="ns" type="number" name="news_short_seconds" min="30" max="120" step="5" value="{{ s.news_short_seconds }}"></div></div>
+  <p class="hint">80 s + la phrase d'abonnement donnent environ 85 à 90 s. Remplace le Short d'accroche : la vidéo longue du jour reste une histoire. Le dimanche, le récap hebdomadaire garde son Short.</p>
   <label class="check"><input type="checkbox" name="weekly_recap" {{ 'checked' if s.weekly_recap }}> Un récapitulatif mondial chaque semaine</label>
   <p class="hint">Ce jour-là, il remplace la vidéo d'histoire (le quota gratuit d'images ne permet pas les deux). Source : Wikipédia, « Current events », sur les 6 jours précédents.</p>
   <div class="row2">

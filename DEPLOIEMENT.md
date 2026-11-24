@@ -392,3 +392,10 @@ Admin > Réglages > Publication : une heure par plateforme (YouTube, Instagram, 
 Le planificateur publie chaque plateforme à son heure ; la journée est close quand toutes ont un résultat.
 Bouton **Envoyer à TikTok** (tableau de bord et page d'une journée) : renvoie le Short en brouillon, même déjà publié.
 Après `git pull` : `docker compose up -d --build shorts admin`.
+
+## Short d'actualité quotidien (test)
+
+Lundi à samedi : vidéo longue d'histoire + Short de ~90 s sur l'actualité des deux jours précédents (Wikipédia, Current events,
+vérifié contre la source). Dimanche : récap hebdomadaire (long + Short). Réglages > Contenu : case « Short d'actualité » et durée
+(80 s + phrase d'abonnement ≈ 85-90 s). Si la source est indisponible, le Short d'accroche habituel est créé.
+Description du Short sur YouTube/Facebook : lien « Today's story » vers la vidéo longue du jour.
