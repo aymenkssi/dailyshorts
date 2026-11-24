@@ -59,3 +59,5 @@ line-height:1.45;max-height:70vh;margin:0;white-space:pre-wrap;word-break:break-
   .bar form{margin-left:auto}
   main{padding:14px 12px 48px}
 }
+
+.grid-table{width:auto;margin:6px 0}.grid-table th,.grid-table td{padding:6px 14px 6px 0;border:0}.grid-table input{width:20px;height:20px}

@@ -122,7 +122,7 @@ def at(day_date, hhmm):
 
 def platform_times(s, d):
     """Heure de publication de chaque plateforme activée (l'heure générale si elle n'a pas la sienne)."""
-    return {p: at(d, s[f"publish_at_{p}"] or s["publish_at"]) for p in store.PLATFORMS if s[f"publish_{p}"]}
+    return {p: at(d, s[f"publish_at_{p}"] or s["publish_at"]) for p in store.PLATFORMS if store.platform_active(s, p)}
 
 
 def settled(day, platform, ok_only=False):
@@ -139,10 +139,12 @@ def tick():
     day = now.date().isoformat()
     has = lambda name: store.has_flag(day, name)  # noqa: E731
 
-    if has("send_tiktok") and store.day_dir(day).exists():
-        # renvoi manuel du Short sur TikTok (bouton de l'admin), même pour une journée déjà publiée
-        run_step(day, "envoi TikTok", ["--platforms", "tiktok", "--force"])
-        store.set_flag(day, "send_tiktok", False)
+    # renvoi manuel du Short sur une plateforme (boutons de l'admin), même pour une journée déjà publiée
+    manual = [p for p in store.PLATFORMS if has(f"send_{p}")]
+    if manual and store.day_dir(day).exists():
+        run_step(day, "envoi du Short (" + ", ".join(manual) + ")", ["--platforms", ",".join(manual), "--force"])
+        for p in manual:
+            store.set_flag(day, f"send_{p}", False)
         return True
 
     published = has("done") or has("failed")

@@ -21,7 +21,8 @@
     {{ post('/videos/' ~ d.day ~ '/publish_now', 'Publier maintenant', csrf, '', 'Publier tout de suite sur les plateformes activées ?') }}
     {% if not d.flags.rejected %}{{ post('/videos/' ~ d.day ~ '/reject', 'Refuser', csrf, 'danger', 'Ne rien publier aujourd’hui ?') }}{% endif %}
   {% endif %}
-  {% if d.videos.short %}{{ post('/videos/' ~ d.day ~ '/send_tiktok', 'Envoyer à TikTok', csrf, '', 'Envoyer le Short dans ta boîte de réception TikTok (brouillon) ? Il sera renvoyé même s’il l’a déjà été.') }}{% endif %}
+  {% if d.videos.short %}<span class="mute small">Envoyer le Short :</span>
+    {% for k, n in (('youtube', 'YouTube'), ('instagram', 'Instagram'), ('tiktok', 'TikTok (brouillon)'), ('facebook', 'Facebook')) %}{{ post('/videos/' ~ d.day ~ '/send_' ~ k, n, csrf, '', 'Envoyer le Short sur ' ~ n ~ ' maintenant ? Il sera renvoyé même s’il l’a déjà été.') }}{% endfor %}{% endif %}
   {% if not d.flags.done %}{{ post('/videos/' ~ d.day ~ '/redo', 'Refaire les vidéos', csrf, '', 'Supprimer ces vidéos et en créer de nouvelles ? Cela consomme le quota d’images du jour.') }}{% endif %}
 {% endif %}
 </div>

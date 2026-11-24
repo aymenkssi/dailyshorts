@@ -265,9 +265,9 @@ def video_action(day: str, action: str):
     elif action == "redo":
         shutil.rmtree(store.day_dir(day), ignore_errors=True)
         return back("/", "Vidéos supprimées : une nouvelle création démarre dans la minute.")
-    elif action == "send_tiktok" and st["videos"]["short"]:
-        store.set_flag(day, "send_tiktok")
-        msg = "Envoi du Short vers ta boîte TikTok demandé : il démarre dans la minute (suivi dans le journal)."
+    elif action.startswith("send_") and action[5:] in store.PLATFORMS and st["videos"]["short"]:
+        store.set_flag(day, action)
+        msg = f"Envoi du Short sur {action[5:].capitalize()} demandé : il démarre dans la minute (suivi dans le journal)."
     elif action == "publish_now" and all(st["videos"].values()) and not st["flags"]["done"]:
         for name in ("rejected", "failed"):
             store.set_flag(day, name, False)

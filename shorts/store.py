@@ -34,7 +34,16 @@ SCHEMA = {
     "publish_instagram": ("PUBLISH_INSTAGRAM", False, "bool"),
     "publish_tiktok": ("PUBLISH_TIKTOK", False, "bool"),
     "publish_facebook": ("PUBLISH_FACEBOOK", False, "bool"),
-    "long_to_social": ("LONG_TO_SOCIAL", False, "bool"),
+    "long_to_social": ("LONG_TO_SOCIAL", False, "bool"),  # ancien réglage, repris par la grille ci-dessous
+    # quelle vidéo part sur quelle plateforme (en plus de l'interrupteur de la plateforme)
+    "send_youtube_long": ("SEND_YOUTUBE_LONG", True, "bool"),
+    "send_youtube_short": ("SEND_YOUTUBE_SHORT", True, "bool"),
+    "send_instagram_long": ("SEND_INSTAGRAM_LONG", False, "bool"),
+    "send_instagram_short": ("SEND_INSTAGRAM_SHORT", True, "bool"),
+    "send_tiktok_long": ("SEND_TIKTOK_LONG", False, "bool"),
+    "send_tiktok_short": ("SEND_TIKTOK_SHORT", True, "bool"),
+    "send_facebook_long": ("SEND_FACEBOOK_LONG", True, "bool"),
+    "send_facebook_short": ("SEND_FACEBOOK_SHORT", True, "bool"),
     "weekly_recap": ("WEEKLY_RECAP", True, "bool"),
     "daily_news_short": ("DAILY_NEWS_SHORT", True, "bool"),
     "news_short_seconds": ("NEWS_SHORT_SECONDS", 80, "int"),
@@ -111,11 +120,18 @@ def get_settings():
         raw = saved.get(key, os.environ.get(env, default))
         if key == "publish_at" and key not in saved and "PUBLISH_AT" not in os.environ:
             raw = os.environ.get("RUN_AT", default)  # ancien nom
+        if key in ("send_instagram_long", "send_tiktok_long") and key not in saved and "long_to_social" in saved:
+            raw = saved["long_to_social"]  # reprise de l'ancien réglage « vidéo longue aussi sur Instagram et TikTok »
         try:
             out[key] = _coerce(key, raw)
         except (ValueError, TypeError):
             out[key] = default
     return out
+
+
+def platform_active(s, platform):
+    """Plateforme activée et avec au moins une vidéo à envoyer."""
+    return bool(s[f"publish_{platform}"] and (s[f"send_{platform}_long"] or s[f"send_{platform}_short"]))
 
 
 def save_settings(values):
@@ -176,7 +192,7 @@ def pop_topic():
 
 # ---------- État d'une journée ----------
 PLATFORMS = ("youtube", "instagram", "tiktok", "facebook")
-FLAGS = ("send_tiktok", "generated", "gen_tried", "approved", "rejected", "publish_now", "done", "failed", "running")
+FLAGS = ("send_youtube", "send_instagram", "send_tiktok", "send_facebook", "generated", "gen_tried", "approved", "rejected", "publish_now", "done", "failed", "running")
 
 
 def valid_day(day):

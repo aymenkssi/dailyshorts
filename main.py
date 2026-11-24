@@ -230,34 +230,37 @@ def main():
         label = "Today's story" if (scripts["short"].get("kind") == "recap" and scripts["long"].get("kind") != "recap") else "Full story"
         return f"▶ {label}: {link}" if link and str(results["facebook_long"]).startswith("OK") else ""
 
-    yt = on("PUBLISH_YOUTUBE")
+    def go(platform, kind):
+        """Plateforme activée ET cette vidéo (longue ou Short) autorisée pour elle dans l'admin."""
+        return on(f"PUBLISH_{platform.upper()}") and on(f"SEND_{platform.upper()}_{kind.upper()}")
+
     targets = [  # (nom, activé, vidéo nécessaire, action)
-        ("youtube_long", yt, "long",
+        ("youtube_long", go("youtube", "long"), "long",
          lambda: platforms.publish_youtube(finals["long"], scripts["long"], short=False)),
-        ("youtube_short", yt, "short",
+        ("youtube_short", go("youtube", "short"), "short",
          lambda: platforms.publish_youtube(finals["short"], scripts["short"], short=True, extra=long_link())),
-        ("instagram", on("PUBLISH_INSTAGRAM"), "short",
+        ("instagram", go("instagram", "short"), "short",
          lambda: platforms.publish_instagram(finals["short"], scripts["short"], args.date)),
-        ("tiktok", on("PUBLISH_TIKTOK"), "short",
+        ("tiktok", go("tiktok", "short"), "short",
          lambda: platforms.publish_tiktok(finals["short"], scripts["short"])),
         # Facebook : la vidéo longue sur la Page, puis le Short en Reel avec le lien vers la longue
-        ("facebook_long", on("PUBLISH_FACEBOOK"), "long",
+        ("facebook_long", go("facebook", "long"), "long",
          lambda: platforms.publish_facebook_video(finals["long"], scripts["long"], args.date)),
-        ("facebook", on("PUBLISH_FACEBOOK"), "short",
+        ("facebook", go("facebook", "short"), "short",
          lambda: platforms.publish_facebook_reel(finals["short"], scripts["short"], extra=fb_link())),
-        # option : la vidéo longue aussi sur Instagram et TikTok
-        ("instagram_long", on("PUBLISH_INSTAGRAM") and on("LONG_TO_SOCIAL"), "long",
+        ("instagram_long", go("instagram", "long"), "long",
          lambda: platforms.publish_instagram(finals["long"], scripts["long"], args.date, suffix="-long")),
-        ("tiktok_long", on("PUBLISH_TIKTOK") and on("LONG_TO_SOCIAL"), "long",
+        ("tiktok_long", go("tiktok", "long"), "long",
          lambda: platforms.publish_tiktok(finals["long"], scripts["long"])),
     ]
-    only = {p.strip() for p in args.platforms.split(",") if p.strip()}
     failed = bool(missing)  # une vidéo manquante = journée incomplète, on publie quand même ce qui existe
     for name, enabled, kind, fn in targets:
         if only and name.split("_")[0] not in only:
             continue
         if only and args.force:
-            enabled = enabled or kind == "short"  # renvoi manuel : le Short, même si la plateforme est coupée
+            if kind != "short":
+                continue  # renvoi manuel : uniquement le Short (jamais la vidéo longue en double)
+            enabled = True  # même si la plateforme ou le Short y sont coupés dans les réglages
         elif str(results.get(name, "")).startswith("OK"):
             continue
         if not enabled or kind not in finals:
