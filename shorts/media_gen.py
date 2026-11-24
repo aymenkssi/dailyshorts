@@ -215,10 +215,10 @@ def generate_images(prompts, out_dir, size=(768, 1344), spare=(), refs=None, pla
 
 
 # ---------- Voix off (Kokoro, open source, tourne sur le CPU du VPS) ----------
-_PIPELINE = None
+_PIPELINES = {}  # une pipeline Kokoro par langue (américain « a », britannique « b »)
 
 
-def synthesize_voice(text, out_dir):
+def synthesize_voice(text, out_dir, voice=None):
     """Renvoie (chemin_wav, liste de mots [{word,start,end}])."""
     out_dir = Path(out_dir)
     wav = out_dir / "voice.wav"
@@ -226,16 +226,15 @@ def synthesize_voice(text, out_dir):
     if wav.exists() and words_json.exists():
         return wav, json.loads(words_json.read_text())
 
-    global _PIPELINE
     import numpy as np
     import soundfile as sf
     from kokoro import KPipeline
 
-    voice = os.environ.get("KOKORO_VOICE", "am_michael")
-    if _PIPELINE is None:
-        _PIPELINE = KPipeline(lang_code=voice[0])  # 'a' = anglais US, 'b' = anglais UK
+    voice = voice or os.environ.get("KOKORO_VOICE", "am_michael")
+    if voice[0] not in _PIPELINES:
+        _PIPELINES[voice[0]] = KPipeline(lang_code=voice[0])  # 'a' = anglais US, 'b' = anglais UK
     chunks, tokens, offset = [], [], 0.0
-    for res in _PIPELINE(text, voice=voice, speed=float(os.environ.get("KOKORO_SPEED", 1.05))):
+    for res in _PIPELINES[voice[0]](text, voice=voice, speed=float(os.environ.get("KOKORO_SPEED", 1.05))):
         audio = res.audio.cpu().numpy() if hasattr(res.audio, "cpu") else np.asarray(res.audio)
         for t in res.tokens or []:
             tokens.append({

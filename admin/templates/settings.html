@@ -81,10 +81,16 @@
   <p class="hint">Les images restent symboliques (lieux, objets, foules anonymes) : jamais de personne réelle reconnaissable.</p>
 </div>
 <div class="card"><h2>Voix et musique</h2>
-  <label for="v">Voix</label>
+  <label for="v">Voix des histoires</label>
   <select id="v" name="kokoro_voice">
-    {% for v, l in (('am_michael', 'Michael (américain)'), ('am_fenrir', 'Fenrir (américain, grave)'), ('am_puck', 'Puck (américain, vif)'), ('bm_george', 'George (britannique)'), ('bm_fable', 'Fable (britannique, conteur)')) %}<option value="{{ v }}" {{ 'selected' if s.kokoro_voice == v }}>{{ l }}</option>{% endfor %}
+    {% for v, l in (('am_michael', 'Michael (homme, américain)'), ('am_fenrir', 'Fenrir (homme, américain, grave)'), ('am_puck', 'Puck (homme, américain, vif)'), ('bm_george', 'George (homme, britannique)'), ('bm_fable', 'Fable (homme, britannique, conteur)'), ('af_heart', 'Heart (femme, américaine, chaleureuse)'), ('af_bella', 'Bella (femme, américaine)'), ('af_nicole', 'Nicole (femme, américaine, douce)'), ('af_sarah', 'Sarah (femme, américaine)'), ('af_sky', 'Sky (femme, américaine)'), ('bf_emma', 'Emma (femme, britannique)'), ('bf_isabella', 'Isabella (femme, britannique)')) %}<option value="{{ v }}" {{ 'selected' if s.kokoro_voice == v }}>{{ l }}</option>{% endfor %}
   </select>
+  <label for="nv">Voix des actualités (Short d'actualité et récap du dimanche)</label>
+  <select id="nv" name="news_voice">
+    <option value="" {{ 'selected' if not s.news_voice }}>Identique à la voix des histoires</option>
+    {% for v, l in (('am_michael', 'Michael (homme, américain)'), ('am_fenrir', 'Fenrir (homme, américain, grave)'), ('am_puck', 'Puck (homme, américain, vif)'), ('bm_george', 'George (homme, britannique)'), ('bm_fable', 'Fable (homme, britannique, conteur)'), ('af_heart', 'Heart (femme, américaine, chaleureuse)'), ('af_bella', 'Bella (femme, américaine)'), ('af_nicole', 'Nicole (femme, américaine, douce)'), ('af_sarah', 'Sarah (femme, américaine)'), ('af_sky', 'Sky (femme, américaine)'), ('bf_emma', 'Emma (femme, britannique)'), ('bf_isabella', 'Isabella (femme, britannique)')) %}<option value="{{ v }}" {{ 'selected' if s.news_voice == v }}>{{ l }}</option>{% endfor %}
+  </select>
+  <p class="hint">Prend effet sur les prochaines vidéos créées. Une voix jamais utilisée est téléchargée au premier passage (quelques secondes).</p>
   <label for="mv">Volume de la musique de fond (0 à 1)</label>
   <input id="mv" type="number" name="music_volume" min="0" max="1" step="0.05" value="{{ s.music_volume }}">
   <p class="hint">La musique vient des fichiers mp3 déposés dans <code>assets/music/</code> sur le serveur. 0 = sans musique.</p>

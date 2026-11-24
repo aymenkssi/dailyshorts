@@ -77,7 +77,8 @@ def produce(kind, script, out, size=None, refs=None):
     print(f"[{kind}] {script['title']} — {len(scenes)} plans")
     print(f"[{kind}] voix off…")
     narration = " ".join(s["narration"].strip() for s in scenes)
-    voice, words = media_gen.synthesize_voice(narration, out)
+    news_voice = os.environ.get("NEWS_VOICE", "") if script.get("kind") == "recap" else ""
+    voice, words = media_gen.synthesize_voice(narration, out, voice=news_voice or None)
     print(f"[{kind}] images…")
     recap = script.get("kind") == "recap"
     prompts, plain, scene_refs = [], [], []
