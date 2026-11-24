@@ -57,6 +57,7 @@ SCHEMA = {
     "claude_model": ("CLAUDE_MODEL", "sonnet", "choice:sonnet,opus"),
     "character_refs": ("CHARACTER_REFS", True, "bool"),
     "particles": ("PARTICLES", True, "bool"),
+    "parallax": ("PARALLAX", True, "bool"),
     "kokoro_voice": ("KOKORO_VOICE", "am_michael", "choice:am_michael,am_fenrir,am_puck,bm_george,bm_fable,af_heart,af_bella,af_nicole,af_sarah,af_sky,bf_emma,bf_isabella"),
     # voix des vidéos d'actualité (récap du dimanche et Short d'actualité) ; vide = la voix ci-dessus
     "news_voice": ("NEWS_VOICE", "", "choice:,am_michael,am_fenrir,am_puck,bm_george,bm_fable,af_heart,af_bella,af_nicole,af_sarah,af_sky,bf_emma,bf_isabella"),

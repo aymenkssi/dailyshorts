@@ -166,8 +166,56 @@ def prepare(img_path, L):
     return src
 
 
-def kb_frame(src, motion, p, L):
-    """Une image du plan : zoom/pan sous-pixel, p = avancement de 0 à 1 (au-delà pendant les fondus)."""
+# ---------- Parallaxe : l'avant-plan bouge plus que l'arrière-plan (carte de profondeur) ----------
+PARALLAX = 0.014   # amplitude du décalage, en fraction de la largeur de l'image
+_DEPTH_MODEL = None
+
+
+def estimate_depth(img_path):
+    """Carte de profondeur (image 8 bits, blanc = proche) calculée par Depth Anything V2 (petit modèle, CPU),
+    enregistrée à côté de l'image. Renvoie None si le modèle est indisponible : le plan reste un simple zoom."""
+    global _DEPTH_MODEL
+    img_path = Path(img_path)
+    out = img_path.with_suffix(".depth.png")
+    if out.exists():
+        return Image.open(out).convert("L")
+    if _DEPTH_MODEL is False:  # déjà essayé sans succès pendant ce rendu
+        return None
+    try:
+        if _DEPTH_MODEL is None:
+            from transformers import pipeline
+            _DEPTH_MODEL = pipeline("depth-estimation", model="depth-anything/Depth-Anything-V2-Small-hf", device=-1)
+        res = _DEPTH_MODEL(Image.open(img_path).convert("RGB"))["predicted_depth"]
+        import numpy as np
+        d = res.squeeze().cpu().numpy() if hasattr(res, "cpu") else np.asarray(res).squeeze()
+        lo, hi = np.percentile(d, (2, 98))
+        d = np.clip((d - lo) / max(1e-6, hi - lo), 0, 1)
+        im = Image.fromarray((d * 255).astype("uint8")).resize(Image.open(img_path).size, Image.BICUBIC)
+        im.save(out)
+        return im
+    except Exception as e:  # noqa: BLE001  -> modèle absent, pas de réseau, mémoire…
+        print(f"  parallaxe indisponible ({str(e)[:120]}) : zoom simple")
+        _DEPTH_MODEL = False
+        return None
+
+
+def parallax_warp(frame, depth, motion, p, sign=1):
+    """Décale chaque pixel selon sa profondeur : proche = bouge plus. frame et depth ont la même taille."""
+    import cv2
+    import numpy as np
+    W, H = frame.size
+    d = np.asarray(depth, dtype=np.float32) / 255.0
+    amp = PARALLAX * W
+    ax, ay = {"pan_left": (1, 0), "pan_right": (-1, 0), "pan_up": (0, 1), "pan_down": (0, -1)}.get(motion, (sign, 0))
+    k = (min(max(p, -0.1), 1.1) - 0.5) * 2 * amp
+    off = (d - 0.4) * k
+    xs, ys = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
+    out = cv2.remap(np.asarray(frame), xs - off * ax, ys - off * ay, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    return Image.fromarray(out)
+
+
+def kb_box(src, motion, p, L):
+    """Zone de l'image source visible à l'avancement p (zoom/pan)."""
     W, H = L.w, L.h
     p = min(max(p, -0.1), 1.1)
     sw, sh = src.size
@@ -186,7 +234,17 @@ def kb_frame(src, motion, p, L):
     cw, ch = bw / z, bh / z
     cx = min(max(sw / 2 + (p - 0.5) * 2 * dx * sw, cw / 2), sw - cw / 2)
     cy = min(max(sh / 2 + (p - 0.5) * 2 * dy * sh, ch / 2), sh - ch / 2)
-    return src.resize((W, H), Image.BICUBIC, box=(cx - cw / 2, cy - ch / 2, cx + cw / 2, cy + ch / 2))
+    return (cx - cw / 2, cy - ch / 2, cx + cw / 2, cy + ch / 2)
+
+
+def kb_frame(src, motion, p, L, depth=None, sign=1):
+    """Une image du plan : zoom/pan sous-pixel, p = avancement de 0 à 1 (au-delà pendant les fondus).
+    depth : carte de profondeur (même taille que src) pour la parallaxe."""
+    box = kb_box(src, motion, p, L)
+    frame = src.resize((L.w, L.h), Image.BICUBIC, box=box)
+    if depth is not None:
+        frame = parallax_warp(frame, depth.resize((L.w, L.h), Image.BILINEAR, box=box), motion, p, sign)
+    return frame
 
 
 class Particles:
@@ -217,7 +275,7 @@ class Particles:
             frame.paste(rgb, (int(x), int(y)), levels[min(3, int(a * 4))])
 
 
-def render_shots(images, timings, motions, out, L, particles=True, seed=0):
+def render_shots(images, timings, motions, out, L, particles=True, seed=0, parallax=True):
     """Tous les plans en un seul flux, avec un fondu enchaîné à chaque changement de plan."""
     total = timings[-1][1]
     n_frames = max(1, round(total * FPS))
@@ -228,12 +286,18 @@ def render_shots(images, timings, motions, out, L, particles=True, seed=0):
         if i not in cache:
             for k in [k for k in cache if k < i - 1]:  # deux plans en mémoire au plus
                 del cache[k]
-            cache[i] = prepare(images[i], L)
+            im = prepare(images[i], L)
+            dm = estimate_depth(images[i]) if parallax else None
+            if dm is not None:
+                from PIL import ImageFilter
+                dm = dm.resize(im.size, Image.BICUBIC).filter(ImageFilter.GaussianBlur(max(2, im.size[0] / 400)))
+            cache[i] = (im, dm)
         return cache[i]
 
     def shot_frame(i, t):
         s, e = timings[i]
-        return kb_frame(src(i), motions[i], (t - s) / max(0.1, e - s), L)
+        im, dm = src(i)
+        return kb_frame(im, motions[i], (t - s) / max(0.1, e - s), L, depth=dm, sign=1 if i % 2 == 0 else -1)
 
     dust = Particles(L, seed) if particles else None
     proc = subprocess.Popen([
@@ -303,7 +367,7 @@ def subscribe_button(L, out):
 
 
 def assemble(scenes, images, animated, voice, words, out_dir, music_dir=None, music_volume=0.1, layout=SHORT,
-             particles=True):
+             particles=True, parallax=True):
     """animated : conservé pour compatibilité (plus utilisé) ; particles : poussière de lumière."""
     L = layout
     out_dir = Path(out_dir)
@@ -320,7 +384,8 @@ def assemble(scenes, images, animated, voice, words, out_dir, music_dir=None, mu
     video = out_dir / "video_noaudio.mp4"
     if not video.exists():
         tmp = out_dir / "video_noaudio.tmp.mp4"
-        render_shots(images, timings, motions, tmp, L, particles=particles, seed=str(out_dir))
+        render_shots(images, timings, motions, tmp, L, particles=particles, seed=str(out_dir),
+                     parallax=parallax)
         tmp.replace(video)
 
     captions = build_captions(words, ranges, total, out_dir / "captions", L)

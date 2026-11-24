@@ -62,6 +62,8 @@
   </select>
   <p class="hint">Demande le jeton <code>CLAUDE_CODE_OAUTH_TOKEN</code> sur le serveur (voir DEPLOIEMENT.md). Si la limite de l'abonnement est atteinte, FreeLLMAPI prend le relais.</p>
   <label class="check"><input type="checkbox" name="character_refs" {{ 'checked' if s.character_refs }}> Personnages constants (un portrait de référence par personnage)</label>
+  <label class="check"><input type="checkbox" name="parallax" {{ 'checked' if s.parallax }}> Effet de profondeur (l'avant-plan bouge plus que l'arrière-plan)</label>
+  <p class="hint">Utilise un petit modèle de profondeur (téléchargé au premier passage, ~100 Mo) : ajoute 1 à 3 minutes de calcul par jour. Si le modèle est indisponible, les plans gardent le simple zoom.</p>
   <label class="check"><input type="checkbox" name="particles" {{ 'checked' if s.particles }}> Poussière de lumière animée (vidéos d'histoire)</label>
   <p class="hint">La taille des images s'adapte au quota gratuit de Cloudflare : jusqu'à 1920 × 1088, sans agrandissement flou.</p>
 </div>

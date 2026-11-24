@@ -399,3 +399,10 @@ Lundi à samedi : vidéo longue d'histoire + Short de ~90 s sur l'actualité des
 vérifié contre la source). Dimanche : récap hebdomadaire (long + Short). Réglages > Contenu : case « Short d'actualité » et durée
 (80 s + phrase d'abonnement ≈ 85-90 s). Si la source est indisponible, le Short d'accroche habituel est créé.
 Description du Short sur YouTube/Facebook : lien « Today's story » vers la vidéo longue du jour.
+
+## Effet de profondeur (parallaxe)
+
+Chaque plan est animé avec une carte de profondeur (Depth Anything V2 « small », CPU) : l'avant-plan bouge plus que l'arrière-plan.
+Le modèle (~100 Mo) est téléchargé au premier passage dans le volume de cache. Compter 1 à 3 min de calcul pour les cartes de profondeur
++ ~4 min de rendu en plus pour la vidéo longue. Réglages > Contenu > « Effet de profondeur » pour le couper. Modèle indisponible = zoom simple.
+Après `git pull` : `docker compose up -d --build shorts` (nouvelle dépendance : opencv).

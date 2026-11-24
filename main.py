@@ -95,7 +95,8 @@ def produce(kind, script, out, size=None, refs=None):
     final = editing.assemble(scenes, images, {}, voice, words, out,
                              music_dir=ROOT / "assets" / "music",
                              music_volume=float(os.environ.get("MUSIC_VOLUME", 0.1)),
-                             layout=layout, particles=on("PARTICLES") and not recap)
+                             layout=layout, particles=on("PARTICLES") and not recap,
+                             parallax=on("PARALLAX"))
     print(f"[{kind}] vidéo : {final} ({editing.media_duration(final):.0f} s)")
     return final
 
