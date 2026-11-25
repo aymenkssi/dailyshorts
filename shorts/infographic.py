@@ -123,9 +123,10 @@ def fetch(ds):
             params = {"get": "NAME," + ",".join(ds["vars"]), "for": "state:*"}
             if os.environ.get("CENSUS_API_KEY"):
                 params["key"] = os.environ["CENSUS_API_KEY"]
-            r = requests.get(CENSUS.format(year=year), params=params, timeout=60)
-            if not r.ok:
-                last = f"{year} : HTTP {r.status_code}"
+            r = requests.get(CENSUS.format(year=year), params=params, timeout=60,
+                             headers={"User-Agent": "Mozilla/5.0 (compatible; dailyshorts/1.0)", "Accept": "application/json"})
+            if not r.ok or not r.text.strip().startswith("["):
+                last = (last + " | " if last else "") + f"{year} : HTTP {r.status_code} {r.text.strip()[:120]!r}"
                 continue
             rows = r.json()
             head = rows[0]
@@ -147,7 +148,7 @@ def fetch(ds):
                 raise RuntimeError(f"valeurs hors de la plage plausible {ds['rng']} : {[ABBR[b] for b in bad][:5]}")
             return year, out
         except (requests.RequestException, ValueError, KeyError, ZeroDivisionError, RuntimeError) as e:
-            last = f"{year} : {e}"
+            last = (last + " | " if last else "") + f"{year} : {e}"
     raise RuntimeError(f"jeu de données « {ds['key']} » indisponible ({last})")
 
 
