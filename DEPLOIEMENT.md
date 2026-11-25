@@ -406,12 +406,3 @@ Chaque plan est animé avec une carte de profondeur (Depth Anything V2 « small 
 Le modèle (~100 Mo) est téléchargé au premier passage dans le volume de cache. Compter 1 à 3 min de calcul pour les cartes de profondeur
 + ~4 min de rendu en plus pour la vidéo longue. Réglages > Contenu > « Effet de profondeur » pour le couper. Modèle indisponible = zoom simple.
 Après `git pull` : `docker compose up -d --build shorts` (nouvelle dépendance : opencv).
-
-## Livres de coloriage (Amazon KDP)
-
-Chaque jour (jours d'histoire seulement, pas le récap), les N meilleures images de la vidéo longue (Réglages > Contenu, 3 par défaut)
-deviennent des pages à colorier : dessin au trait + titre + une phrase du récit. Elles sont gardées dans `state/coloring/`.
-Admin > **Coloriages** : aperçu, suppression, et « Créer le livre PDF » (titre, sous-titre, auteur) qui produit dans `output/books/<nom>/` :
-`interior.pdf` (11 x 8,5 po, 300 dpi, verso blanc), `cover_wrap.pdf` (couverture complète), `cover_front.png`, `listing.txt` (description, mots-clés).
-KDP : 24 pages minimum au total ; déclare le contenu généré par IA dans le formulaire ; vérifie les dimensions de couverture avec le calculateur KDP.
-Après `git pull` : `docker compose up -d --build shorts admin` (l'image admin reçoit Pillow et la police).

@@ -58,14 +58,12 @@ SCHEMA = {
     "character_refs": ("CHARACTER_REFS", True, "bool"),
     "particles": ("PARTICLES", True, "bool"),
     "parallax": ("PARALLAX", True, "bool"),
-    "coloring": ("COLORING", True, "bool"),
-    "coloring_per_day": ("COLORING_PER_DAY", 3, "int"),
     "kokoro_voice": ("KOKORO_VOICE", "am_michael", "choice:am_michael,am_fenrir,am_puck,bm_george,bm_fable,af_heart,af_bella,af_nicole,af_sarah,af_sky,bf_emma,bf_isabella"),
     # voix des vidéos d'actualité (récap du dimanche et Short d'actualité) ; vide = la voix ci-dessus
     "news_voice": ("NEWS_VOICE", "", "choice:,am_michael,am_fenrir,am_puck,bm_george,bm_fable,af_heart,af_bella,af_nicole,af_sarah,af_sky,bf_emma,bf_isabella"),
     "music_volume": ("MUSIC_VOLUME", 0.10, "float"),
 }
-LIMITS = {"recap_seconds": (120, 600), "long_seconds": (60, 600), "short_seconds": (15, 90), "news_short_seconds": (30, 120), "coloring_per_day": (1, 10), "music_volume": (0.0, 1.0)}
+LIMITS = {"recap_seconds": (120, 600), "long_seconds": (60, 600), "short_seconds": (15, 90), "news_short_seconds": (30, 120), "music_volume": (0.0, 1.0)}
 
 
 def _read(path, default):

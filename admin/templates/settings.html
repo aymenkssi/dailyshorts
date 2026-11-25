@@ -64,9 +64,6 @@
   <label class="check"><input type="checkbox" name="character_refs" {{ 'checked' if s.character_refs }}> Personnages constants (un portrait de référence par personnage)</label>
   <label class="check"><input type="checkbox" name="parallax" {{ 'checked' if s.parallax }}> Effet de profondeur (l'avant-plan bouge plus que l'arrière-plan)</label>
   <p class="hint">Utilise un petit modèle de profondeur (téléchargé au premier passage, ~100 Mo) : ajoute 1 à 3 minutes de calcul par jour. Si le modèle est indisponible, les plans gardent le simple zoom.</p>
-  <label class="check"><input type="checkbox" name="coloring" {{ 'checked' if s.coloring }}> Collecter des pages de coloriage (histoires du jour)</label>
-  <div class="row2"><div><label for="cp">Pages par jour</label><input id="cp" type="number" name="coloring_per_day" min="1" max="10" value="{{ s.coloring_per_day }}"></div></div>
-  <p class="hint">Les meilleures images de la vidéo longue deviennent des pages à colorier. Voir l'onglet Coloriages.</p>
   <label class="check"><input type="checkbox" name="particles" {{ 'checked' if s.particles }}> Poussière de lumière animée (vidéos d'histoire)</label>
   <p class="hint">La taille des images s'adapte au quota gratuit de Cloudflare : jusqu'à 1920 × 1088, sans agrandissement flou.</p>
 </div>
