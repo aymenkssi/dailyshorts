@@ -302,18 +302,30 @@ def topic_action(index: int, action: str):
     return back("/sujets")
 
 
+# cases à cocher présentes dans la page Réglages (la formulaire les liste dans « _bools »)
+BOOL_KEYS = [k for k, (_, _, kind) in store.SCHEMA.items() if kind == "bool" and k != "long_to_social"]
+
+
 @app.get("/reglages", response_class=HTMLResponse)
 def settings_page(request: Request):
-    return page(request, "settings", s=store.get_settings())
+    return page(request, "settings", s=store.get_settings(), bool_keys=",".join(BOOL_KEYS))
 
 
 @app.post("/reglages")
 async def settings_save(request: Request):
     form = await request.form()
     values = {k: form.get(k, "") for k in store.SCHEMA}
+    # une case décochée est absente du formulaire : on ne la lit que si la page envoyée la contenait
+    # (une page ouverte avant une mise à jour n'a pas les nouvelles cases : elle ne doit pas les décocher)
+    shown = set(str(form.get("_bools", "")).split(","))
     for k, (_, _, kind) in store.SCHEMA.items():
         if kind == "bool":
-            values[k] = k in form  # case décochée = absente du formulaire
+            if k in shown:
+                values[k] = k in form
+            else:
+                values.pop(k, None)
+        elif k not in form:
+            values.pop(k, None)  # champ absent d'une page périmée : valeur conservée
     try:
         store.save_settings(values)
         return back("/reglages", "Réglages enregistrés. Ils sont pris en compte dans la minute.")

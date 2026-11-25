@@ -2,7 +2,7 @@
 {% block title %}Réglages{% endblock %}
 {% block body %}
 <h1>Réglages</h1>
-<form method="post" action="/reglages"><input type="hidden" name="csrf" value="{{ csrf }}">
+<form method="post" action="/reglages"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="_bools" value="{{ bool_keys }}">
 <div class="grid">
 <div class="card"><h2>Programmation</h2>
   <div class="row2">
