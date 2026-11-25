@@ -255,6 +255,7 @@ def main():
         ("tiktok_long", go("tiktok", "long"), "long",
          lambda: platforms.publish_tiktok(finals["long"], scripts["long"])),
     ]
+    only = {p.strip() for p in args.platforms.split(",") if p.strip()}
     failed = bool(missing)  # une vidéo manquante = journée incomplète, on publie quand même ce qui existe
     for name, enabled, kind, fn in targets:
         if only and name.split("_")[0] not in only:
