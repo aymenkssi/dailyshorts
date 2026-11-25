@@ -410,8 +410,8 @@ Après `git pull` : `docker compose up -d --build shorts` (nouvelle dépendance 
 ## Infographie quotidienne (États-Unis)
 
 Chaque jour, une carte colorée ou un classement des États américains (50 États + DC), en anglais, avec la source
-en bas de l'image. Données : U.S. Census Bureau, American Community Survey 5 ans (API publique, sans clé ; clé
-facultative `CENSUS_API_KEY` dans `.env` si le quota gratuit est dépassé). Aucune donnée n'est inventée : chaque
+en bas de l'image. Données : U.S. Census Bureau, American Community Survey 5 ans (API publique, **clé gratuite
+obligatoire** : https://api.census.gov/data/key_signup.html, à mettre dans `.env` : `CENSUS_API_KEY=...`). Aucune donnée n'est inventée : chaque
 jeu de données (25 au catalogue, `shorts/infographic.py`) est téléchargé, vérifié (51 États, valeurs plausibles)
 puis dessiné ; s'il est indisponible, le suivant est essayé. Carte et classement alternent d'un tour à l'autre.
 

@@ -118,6 +118,8 @@ def choose(day):
 def fetch(ds):
     """{fips: valeur} pour 50 États + DC, avec l'année la plus récente disponible. Lève RuntimeError si douteux."""
     last = None
+    if not os.environ.get("CENSUS_API_KEY"):
+        raise RuntimeError("clé Census manquante : CENSUS_API_KEY dans .env (gratuite : https://api.census.gov/data/key_signup.html)")
     for year in YEARS:
         try:
             params = {"get": "NAME," + ",".join(ds["vars"]), "for": "state:*"}
@@ -125,6 +127,8 @@ def fetch(ds):
                 params["key"] = os.environ["CENSUS_API_KEY"]
             r = requests.get(CENSUS.format(year=year), params=params, timeout=60,
                              headers={"User-Agent": "Mozilla/5.0 (compatible; dailyshorts/1.0)", "Accept": "application/json"})
+            if "missing_key" in r.url or "Invalid Key" in r.text[:600] or "Missing Key" in r.text[:600]:
+                raise RuntimeError("clé Census refusée : vérifie CENSUS_API_KEY (activée par le lien reçu par e-mail ?)")
             if not r.ok or not r.text.strip().startswith("["):
                 last = (last + " | " if last else "") + f"{year} : HTTP {r.status_code} {r.text.strip()[:120]!r}"
                 continue
@@ -148,6 +152,8 @@ def fetch(ds):
                 raise RuntimeError(f"valeurs hors de la plage plausible {ds['rng']} : {[ABBR[b] for b in bad][:5]}")
             return year, out
         except (requests.RequestException, ValueError, KeyError, ZeroDivisionError, RuntimeError) as e:
+            if "clé Census" in str(e):
+                raise
             last = (last + " | " if last else "") + f"{year} : {e}"
     raise RuntimeError(f"jeu de données « {ds['key']} » indisponible ({last})")
 
