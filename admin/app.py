@@ -432,6 +432,70 @@ def tiktok_disconnect():
     return back("/comptes", "Compte TikTok déconnecté et autorisation révoquée.")
 
 
+# ---------------- Livres de coloriage ----------------
+def _coloring():
+    from shorts import coloring
+    return coloring
+
+
+@app.get("/coloriages", response_class=HTMLResponse)
+def coloring_page(request: Request):
+    col = _coloring()
+    books = []
+    if col.BOOKS.exists():
+        for d in sorted(col.BOOKS.iterdir(), reverse=True):
+            if (d / "interior.pdf").exists():
+                books.append({"name": d.name, "files": [f for f in ("interior.pdf", "cover_wrap.pdf", "cover_front.png", "listing.txt") if (d / f).exists()]})
+    return page(request, "coloring", pages=col.list_pages(), books=books, default_author=CHANNEL_NAME)
+
+
+@app.get("/coloriages/thumb/{pid}.jpg")
+def coloring_thumb(pid: str):
+    col = _coloring()
+    f = col.DIR / pid / "thumb.jpg"
+    if not col.ID_RE.match(pid) or not f.exists():
+        raise HTTPException(404)
+    return FileResponse(f, media_type="image/jpeg")
+
+
+@app.get("/coloriages/page/{pid}.png")
+def coloring_full(pid: str):
+    col = _coloring()
+    f = col.DIR / pid / "page.png"
+    if not col.ID_RE.match(pid) or not f.exists():
+        raise HTTPException(404)
+    return FileResponse(f, media_type="image/png")
+
+
+@app.get("/coloriages/livre/{name}/{file}")
+def coloring_book_file(name: str, file: str):
+    col = _coloring()
+    if not re.match(r"^[a-z0-9-]{1,40}$", name) or file not in ("interior.pdf", "cover_wrap.pdf", "cover_front.png", "listing.txt"):
+        raise HTTPException(404)
+    f = col.BOOKS / name / file
+    if not f.exists():
+        raise HTTPException(404)
+    return FileResponse(f, filename=f"{name}-{file}")
+
+
+@app.post("/coloriages/{pid}/delete")
+def coloring_delete(pid: str):
+    _coloring().delete_page(pid)
+    return back("/coloriages", "Page supprimée.")
+
+
+@app.post("/coloriages/livre")
+def coloring_build(title: str = Form(""), subtitle: str = Form(""), author: str = Form(""), blank_between: str = Form("")):
+    title, subtitle, author = (" ".join(x.split())[:80] for x in (title, subtitle, author))
+    if not title or not author:
+        return back("/coloriages", "Titre et auteur obligatoires.")
+    try:
+        info = _coloring().build_book(title, author, subtitle=subtitle, blank_between=bool(blank_between))
+    except ValueError as e:
+        return back("/coloriages", str(e))
+    return back("/coloriages", f"Livre créé : {info['pages']} pages dont {info['illustrations']} à colorier.")
+
+
 @app.get("/journal", response_class=HTMLResponse)
 def journal(request: Request):
     return page(request, "journal", log=log_tail(400))

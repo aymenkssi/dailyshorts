@@ -210,6 +210,17 @@ def main():
             print(f"[{kind}] ÉCHEC : {e}")
             traceback.print_exc()
 
+    if "long" in finals and on("COLORING"):
+        try:  # pages à colorier tirées des images de la vidéo longue (n'empêche jamais la publication)
+            from shorts import coloring
+            made = coloring.harvest(args.date, scripts["long"], out / "long" / "images",
+                                    per_day=int(os.environ.get("COLORING_PER_DAY", 3)),
+                                    footer=os.environ.get("CHANNEL_NAME", "Anime Storytelling"))
+            if made:
+                print(f"Coloriage : {len(made)} page(s) ajoutée(s) à la collection")
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+
     if "long" in finals and not any(h["date"] == args.date for h in history):
         history.append({"date": args.date, "topic": scripts["long"]["topic"], "title": scripts["long"]["title"]})
         HISTORY.write_text(json.dumps(history, indent=1, ensure_ascii=False))
