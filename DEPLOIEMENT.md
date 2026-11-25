@@ -406,3 +406,23 @@ Chaque plan est animé avec une carte de profondeur (Depth Anything V2 « small 
 Le modèle (~100 Mo) est téléchargé au premier passage dans le volume de cache. Compter 1 à 3 min de calcul pour les cartes de profondeur
 + ~4 min de rendu en plus pour la vidéo longue. Réglages > Contenu > « Effet de profondeur » pour le couper. Modèle indisponible = zoom simple.
 Après `git pull` : `docker compose up -d --build shorts` (nouvelle dépendance : opencv).
+
+## Infographie quotidienne (États-Unis)
+
+Chaque jour, une carte colorée ou un classement des États américains (50 États + DC), en anglais, avec la source
+en bas de l'image. Données : U.S. Census Bureau, American Community Survey 5 ans (API publique, sans clé ; clé
+facultative `CENSUS_API_KEY` dans `.env` si le quota gratuit est dépassé). Aucune donnée n'est inventée : chaque
+jeu de données (25 au catalogue, `shorts/infographic.py`) est téléchargé, vérifié (51 États, valeurs plausibles)
+puis dessiné ; s'il est indisponible, le suivant est essayé. Carte et classement alternent d'un tour à l'autre.
+
+1. Réglages > « Infographie quotidienne » : activer, choisir l'heure et les plateformes (Instagram, Facebook, TikTok).
+   La plateforme doit aussi être active dans « Publication ».
+2. **Avant la première fois**, vérifier les données depuis le VPS :
+   `docker compose exec shorts python -m shorts.infographic --check` (une ligne par jeu de données, haut et bas).
+3. Le tableau de bord montre l'image du jour et un bouton « Créer et publier maintenant » / « Relancer la publication ».
+4. Un seul essai automatique par jour ; en cas d'échec, utiliser le bouton. Résultats : `output/infographic/<jour>/`.
+
+TikTok : l'API n'accepte les photos que par adresse (PULL_FROM_URL) ; le domaine qui sert les fichiers publics
+(`PUBLIC_VIDEO_BASE_URL`) doit être vérifié dans le portail TikTok (Manage URL properties). Sinon l'envoi TikTok
+échoue avec un message explicite, sans bloquer Instagram et Facebook.
+Fond de carte : us-atlas (ISC), géométries Albers avec l'Alaska et Hawaï en encart.

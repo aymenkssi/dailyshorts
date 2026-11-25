@@ -67,6 +67,14 @@
   <label class="check"><input type="checkbox" name="particles" {{ 'checked' if s.particles }}> Poussière de lumière animée (vidéos d'histoire)</label>
   <p class="hint">La taille des images s'adapte au quota gratuit de Cloudflare : jusqu'à 1920 × 1088, sans agrandissement flou.</p>
 </div>
+<div class="card"><h2>Infographie quotidienne (États-Unis)</h2>
+  <label class="check"><input type="checkbox" name="daily_infographic" {{ 'checked' if s.daily_infographic }}> Publier chaque jour une carte ou un classement des États américains</label>
+  <div class="row2"><div><label for="ia">Heure de publication</label><input id="ia" type="time" name="infographic_at" value="{{ s.infographic_at }}" required></div></div>
+  <label class="check"><input type="checkbox" name="send_instagram_image" {{ 'checked' if s.send_instagram_image }}> Instagram</label>
+  <label class="check"><input type="checkbox" name="send_facebook_image" {{ 'checked' if s.send_facebook_image }}> Facebook (Page)</label>
+  <label class="check"><input type="checkbox" name="send_tiktok_image" {{ 'checked' if s.send_tiktok_image }}> TikTok (photo)</label>
+  <p class="hint">Données officielles du U.S. Census Bureau (American Community Survey), source indiquée sur l'image. Texte en anglais. La plateforme doit aussi être active dans « Publication ». TikTok n'accepte les photos que depuis une adresse vérifiée dans son portail.</p>
+</div>
 <div class="card"><h2>Récapitulatif de l'actualité</h2>
   <label class="check"><input type="checkbox" name="daily_news_short" {{ 'checked' if s.daily_news_short }}> Short d'actualité des deux jours précédents (lundi à samedi)</label>
   <div class="row2"><div><label for="ns">Durée du Short d'actualité (s)</label><input id="ns" type="number" name="news_short_seconds" min="30" max="120" step="5" value="{{ s.news_short_seconds }}"></div></div>

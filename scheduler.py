@@ -68,6 +68,9 @@ def cleanup(now):
         if d.is_dir() and now.timestamp() - d.stat().st_mtime > KEEP_OUTPUT_DAYS * 86400:
             shutil.rmtree(d, ignore_errors=True)
             log(f"ménage : {d.name} supprimé")
+    for d in (out / "infographic").iterdir() if (out / "infographic").exists() else []:
+        if d.is_dir() and now.timestamp() - d.stat().st_mtime > KEEP_OUTPUT_DAYS * 86400:
+            shutil.rmtree(d, ignore_errors=True)
     pub = Path(os.environ.get("PUBLIC_VIDEO_DIR", "/public"))
     for f in pub.glob("*.mp4") if pub.exists() else []:
         if now.timestamp() - f.stat().st_mtime > KEEP_PUBLIC_DAYS * 86400:
@@ -75,30 +78,33 @@ def cleanup(now):
     trim_log()
 
 
-def run_step(day, label, extra_args):
+def run_step(day, label, extra_args, script="main.py", retries=None):
     """Lance main.py pour ce jour, avec nouveaux essais. Renvoie True si tout a réussi."""
-    store.set_flag(day, "running")
+    track = script == "main.py"  # l'infographie ne touche pas à l'état de la journée vidéo
+    if track:
+        store.set_flag(day, "running")
     try:
-        for attempt in range(1, RETRIES + 2):
+        retries = RETRIES if retries is None else retries
+        for attempt in range(1, retries + 2):
             log(f"{label} du {day} (essai {attempt})")
-            proc = subprocess.Popen([sys.executable, str(ROOT / "main.py"), "--date", day, *extra_args],
+            proc = subprocess.Popen([sys.executable, str(ROOT / script), "--date", day, *extra_args],
                                     cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             for line in proc.stdout:
                 emit(line.rstrip("\n"))
             code = proc.wait()
             while code == 3:  # une commande manuelle traite déjà cette journée : on attend, sans compter d'essai
                 time.sleep(120)
-                code = subprocess.call([sys.executable, str(ROOT / "main.py"), "--date", day, *extra_args], cwd=ROOT)
+                code = subprocess.call([sys.executable, str(ROOT / script), "--date", day, *extra_args], cwd=ROOT)
             if code == 0:
                 log(f"{label} du {day} : terminé")
                 return True
             log(f"{label} du {day} : échec (code {code})")
-            if attempt <= RETRIES and store.day_dir(day).exists():
+            if attempt <= retries and (not track or store.day_dir(day).exists()):
                 log(f"nouvel essai dans {RETRY_WAIT // 60} min")
                 time.sleep(RETRY_WAIT)
         return False
     finally:
-        if store.day_dir(day).exists():
+        if track and store.day_dir(day).exists():
             store.set_flag(day, "running", False)
 
 
@@ -148,6 +154,26 @@ def settled(day, slot, ok_only=False):
     return bool(v) and (not ok_only or str(v).startswith("OK"))
 
 
+def infographic_step(s, now, day):
+    """Infographie quotidienne : indépendante des vidéos (dossier output/infographic/<jour>/).
+    Un seul essai automatique ; en cas d'échec, le bouton de l'admin (fichier .now) relance."""
+    d = ROOT / "output" / "infographic" / day
+    manual = (d / ".now").exists()
+    if not manual and not (s["daily_infographic"] and now >= at(now.date(), s["infographic_at"])
+                           and not (d / ".done").exists() and not (d / ".failed").exists()):
+        return False
+    d.mkdir(parents=True, exist_ok=True)
+    ok = run_step(day, "infographie", [], script="post_image.py", retries=0)
+    (d / ".now").unlink(missing_ok=True)
+    (d / ".failed").unlink(missing_ok=True)
+    if ok:
+        (d / ".done").touch()
+    else:
+        (d / ".failed").touch()
+        log(f"infographie du {day} en échec : bouton « Infographie » de l'admin pour relancer")
+    return True
+
+
 def tick():
     """Une décision du planificateur. Renvoie True si une étape a été exécutée."""
     s = store.get_settings()
@@ -161,6 +187,9 @@ def tick():
         run_step(day, "envoi du Short (" + ", ".join(manual) + ")", ["--platforms", ",".join(manual), "--force"])
         for p in manual:
             store.set_flag(day, f"send_{p}", False)
+        return True
+
+    if infographic_step(s, now, day):
         return True
 
     published = has("done") or has("failed")

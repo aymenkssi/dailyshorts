@@ -15,6 +15,15 @@
   {{ m.day_actions(today, csrf, s.require_approval) }}
 </div>
 {% if s.publish_tiktok and s.tiktok_mode == 'inbox' %}{{ m.captions(today) }}{% endif %}
+<div class="card" style="margin-bottom:16px"><h2>Infographie du jour (États-Unis)</h2>
+  {% if info.exists %}<div class="players"><div><img src="/infographic/{{ info.day }}.jpg" alt="Infographie du jour" style="width:100%;max-width:340px;border-radius:10px"></div>
+    <div><p><b>{{ info.meta.title }}</b><br><span class="mute small">Données : Census Bureau, ACS {{ info.meta.year }} · {{ 'carte' if info.meta.style == 'map' else 'classement' }}</span></p>
+    {% for k, v in info.published.items() %}<p class="small"><span class="pill {{ 'ok' if v.startswith('OK') }}">{{ k }}</span> {{ v[:120] }}</p>{% endfor %}
+    <p class="small"><a href="/infographic/{{ info.day }}.jpg" download>Télécharger l'image</a></p></div></div>
+  {% else %}<p class="mute">{% if s.daily_infographic %}Prévue à {{ s.infographic_at }}.{% else %}Désactivée : à activer dans <a href="/reglages">Réglages</a>.{% endif %}</p>{% endif %}
+  <form method="post" action="/infographic/{{ info.day }}/now"><input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="btn" type="submit">{{ 'Relancer la publication' if info.exists else 'Créer et publier maintenant' }}</button></form>
+</div>
 <div class="grid">
   <div class="card"><h2>Programmation</h2>
     <div class="kpis">

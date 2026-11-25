@@ -211,10 +211,39 @@ def log_tail(n=200):
         return []
 
 
+def infographic_status(day):
+    """État de l'infographie du jour (dossier output/infographic/<jour>/)."""
+    d = store.OUTPUT / "infographic" / day
+    meta = store._read(d / "meta.json", {})
+    return {"day": day, "exists": (d / "infographic.jpg").exists(), "meta": meta,
+            "published": store._read(d / "published.json", {}),
+            "waiting": (d / ".now").exists(), "failed": (d / ".failed").exists(), "done": (d / ".done").exists()}
+
+
+@app.get("/infographic/{day}.jpg")
+def infographic_image(day: str):
+    if not store.valid_day(day):
+        raise HTTPException(404)
+    f = store.OUTPUT / "infographic" / day / "infographic.jpg"
+    if not f.exists():
+        raise HTTPException(404)
+    return FileResponse(f, media_type="image/jpeg", filename=f"infographic-{day}.jpg")
+
+
+@app.post("/infographic/{day}/now")
+def infographic_now(day: str):
+    if not store.valid_day(day) or day != today():
+        raise HTTPException(404)
+    d = store.OUTPUT / "infographic" / day
+    d.mkdir(parents=True, exist_ok=True)
+    (d / ".now").touch()
+    return back("/", "Infographie demandée : création et publication dans la minute (suivi dans le journal).")
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     days = store.list_days(8)
-    return page(request, "dashboard", s=store.get_settings(), today=store.day_status(today()),
+    return page(request, "dashboard", s=store.get_settings(), today=store.day_status(today()), info=infographic_status(today()),
                 recent=[store.day_status(d) for d in days if d != today()][:7],
                 topics=store.get_topics(), log=log_tail(12))
 

@@ -12,11 +12,11 @@ import requests
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def caption_text(meta, limit=2200, max_tags=None):
+def caption_text(meta, limit=2200, max_tags=None, cta=True):
     """Titre, description et hashtags. max_tags : Instagram n'accepte plus que 5 hashtags par publication."""
     tags = meta.get("hashtags", [])[:max_tags] if max_tags else meta.get("hashtags", [])
     tags = " ".join("#" + t.lstrip("#").replace(" ", "") for t in tags)
-    cta = "\U0001F514 Subscribe for a new story every day." if os.environ.get("SUBSCRIBE_CTA", "true") == "true" else ""
+    cta = "\U0001F514 Subscribe for a new story every day." if cta and os.environ.get("SUBSCRIBE_CTA", "true") == "true" else ""
     return f"{meta['title']}\n\n{meta['description']}\n\n{cta}\n\n{tags}".replace("\n\n\n\n", "\n\n")[:limit]
 
 
@@ -348,3 +348,66 @@ def publish_tiktok(video, meta):
                       "disable_comment": False, "disable_duet": False, "disable_stitch": False}}, video)
     st = _tiktok_status(h, pid, {"PUBLISH_COMPLETE"})
     return f"tiktok publish_id {pid} ({privacy}, {st})"
+
+
+# ---------------- Infographie (image du jour) ----------------
+def publish_instagram_image(jpg, meta, date):
+    """Post image sur Instagram (JPEG obligatoire) : Meta la télécharge depuis l'adresse publique du VPS."""
+    url = public_url(jpg, f"{date}-infographic.jpg")
+    base = f"https://{_ig_host()}/{os.environ.get('IG_GRAPH_VERSION', 'v23.0')}"
+    uid, token = os.environ["IG_USER_ID"], _ig_token()
+    r = requests.post(f"{base}/{uid}/media", data={
+        "image_url": url, "caption": caption_text(meta, max_tags=5, cta=False), "access_token": token}, timeout=120)
+    if not r.ok:
+        raise RuntimeError(f"Instagram {r.status_code} : {r.text[:400]}")
+    container = r.json()["id"]
+    for _ in range(20):
+        time.sleep(5)
+        info = requests.get(f"{base}/{container}", params={"fields": "status_code,status", "access_token": token},
+                            timeout=60).json()
+        if info.get("status_code") == "FINISHED":
+            break
+        if info.get("status_code") in ("ERROR", "EXPIRED"):
+            raise RuntimeError(f"Instagram : traitement {info.get('status_code')} — {info.get('status', 'sans détail')}")
+    else:
+        raise RuntimeError("Instagram : délai de traitement dépassé")
+    r = requests.post(f"{base}/{uid}/media_publish", data={"creation_id": container, "access_token": token}, timeout=120)
+    r.raise_for_status()
+    return f"instagram image id {r.json()['id']}"
+
+
+def publish_facebook_photo(jpg, meta):
+    """Photo sur la Page Facebook."""
+    page, token = fb_page_token()
+    with open(jpg, "rb") as f:
+        r = requests.post(f"{_fb_base()}/{page}/photos", timeout=180,
+                          data={"caption": caption_text(meta, limit=5000, cta=False), "published": "true", "access_token": token},
+                          files={"source": f})
+    if not r.ok:
+        raise RuntimeError(f"Facebook {r.status_code} : {r.text[:400]}")
+    return f"facebook photo id {r.json().get('post_id') or r.json().get('id')}"
+
+
+def publish_tiktok_photo(jpg, meta, date):
+    """Publication photo TikTok. L'API ne reçoit les photos que par adresse (PULL_FROM_URL) : le domaine de
+    l'image doit être vérifié dans le portail TikTok (Manage URL properties). Mode inbox : brouillon à publier
+    depuis l'appli."""
+    token = _tiktok_token()
+    h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=UTF-8"}
+    url = public_url(jpg, f"{date}-infographic.jpg")
+    direct = os.environ.get("TIKTOK_MODE", "inbox") == "direct"
+    post_info = {"title": meta["title"][:90], "description": caption_text(meta, limit=4000, cta=False)}
+    if direct:
+        info = requests.post(f"{TT}/post/publish/creator_info/query/", headers=h, timeout=60).json()["data"]
+        options = info.get("privacy_level_options", [])
+        post_info["privacy_level"] = "PUBLIC_TO_EVERYONE" if "PUBLIC_TO_EVERYONE" in options else options[0]
+    r = requests.post(f"{TT}/post/publish/content/init/", headers=h, timeout=60, json={
+        "post_info": post_info, "post_mode": "DIRECT_POST" if direct else "MEDIA_UPLOAD", "media_type": "PHOTO",
+        "source_info": {"source": "PULL_FROM_URL", "photo_cover_index": 0, "photo_images": [url]}})
+    body = r.json() if r.content else {}
+    if not r.ok or body.get("error", {}).get("code") not in (None, "ok"):
+        raise RuntimeError(f"TikTok photo {r.status_code} : {str(body.get('error') or r.text)[:300]} "
+                           "(le domaine de l'image doit être vérifié dans le portail TikTok)")
+    pid = body["data"]["publish_id"]
+    st = _tiktok_status(h, pid, {"SEND_TO_USER_INBOX", "PUBLISH_COMPLETE"})
+    return f"tiktok photo publish_id {pid} ({st})"
