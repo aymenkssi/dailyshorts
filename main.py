@@ -152,6 +152,8 @@ def main():
     ap.add_argument("--platforms", default="", help="ne publier que sur ces plateformes (youtube,instagram,tiktok,facebook)")
     ap.add_argument("--force", action="store_true",
                     help="avec --platforms : renvoyer même si c'est déjà publié ou si la plateforme est coupée")
+    ap.add_argument("--kind", choices=["long", "short"], default="",
+                    help="ne publier que la vidéo longue ou que le Short (heures de publication séparées)")
     args = ap.parse_args()
 
     out = ROOT / "output" / args.date
@@ -259,6 +261,8 @@ def main():
     failed = bool(missing)  # une vidéo manquante = journée incomplète, on publie quand même ce qui existe
     for name, enabled, kind, fn in targets:
         if only and name.split("_")[0] not in only:
+            continue
+        if args.kind and kind != args.kind:
             continue
         if only and args.force:
             if kind != "short":

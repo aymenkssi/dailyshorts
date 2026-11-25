@@ -27,6 +27,11 @@ SCHEMA = {
     "publish_at_instagram": ("PUBLISH_AT_INSTAGRAM", "", "timeopt"),
     "publish_at_tiktok": ("PUBLISH_AT_TIKTOK", "", "timeopt"),
     "publish_at_facebook": ("PUBLISH_AT_FACEBOOK", "", "timeopt"),
+    # heure propre au Short sur cette plateforme ; vide = la même heure que la vidéo longue
+    "publish_at_youtube_short": ("PUBLISH_AT_YOUTUBE_SHORT", "", "timeopt"),
+    "publish_at_instagram_short": ("PUBLISH_AT_INSTAGRAM_SHORT", "", "timeopt"),
+    "publish_at_tiktok_short": ("PUBLISH_AT_TIKTOK_SHORT", "", "timeopt"),
+    "publish_at_facebook_short": ("PUBLISH_AT_FACEBOOK_SHORT", "", "timeopt"),
     "subscribe_cta": ("SUBSCRIBE_CTA", True, "bool"),
     "long_seconds": ("LONG_SECONDS", 240, "int"),
     "short_seconds": ("SHORT_SECONDS", 40, "int"),

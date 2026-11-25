@@ -2,7 +2,8 @@
 
 - generate_at : création des vidéos du jour, sans publier
 - publish_at  : publication des vidéos du jour (si la validation est exigée : seulement une fois approuvées)
-- publish_at_<plateforme> : heure propre à YouTube, Instagram, TikTok ou Facebook (vide = publish_at)
+- publish_at_<plateforme> : heure de la vidéo longue sur cette plateforme (vide = publish_at)
+- publish_at_<plateforme>_short : heure du Short (vide = celle de la vidéo longue)
 
 Il relit les réglages chaque minute, rattrape une étape manquée au démarrage, réessaie en cas
 d'échec (main.py reprend là où il s'était arrêté), obéit aux actions de l'admin (approuver,
@@ -120,16 +121,31 @@ def at(day_date, hhmm):
     return dt.datetime.combine(day_date, dt.time.fromisoformat(hhmm), TZ)
 
 
+def result_key(platform, kind):
+    """Clé du résultat dans published.json."""
+    if kind == "long":
+        return f"{platform}_long"
+    return "youtube_short" if platform == "youtube" else platform
+
+
 def platform_times(s, d):
-    """Heure de publication de chaque plateforme activée (l'heure générale si elle n'a pas la sienne)."""
-    return {p: at(d, s[f"publish_at_{p}"] or s["publish_at"]) for p in store.PLATFORMS if store.platform_active(s, p)}
+    """Heure de chaque envoi (plateforme, long|short) activé.
+    Longue : publish_at_<p> (sinon l'heure générale). Short : publish_at_<p>_short (sinon l'heure de la longue)."""
+    out = {}
+    for p in store.PLATFORMS:
+        if not s[f"publish_{p}"]:
+            continue
+        long_t = s[f"publish_at_{p}"] or s["publish_at"]
+        for kind in ("long", "short"):
+            if s[f"send_{p}_{kind}"]:
+                out[(p, kind)] = at(d, long_t if kind == "long" else (s[f"publish_at_{p}_short"] or long_t))
+    return out
 
 
-def settled(day, platform, ok_only=False):
-    """Une plateforme est réglée quand un résultat est enregistré pour elle (ok_only : réussi seulement)."""
-    res = store._read(store.day_dir(day) / "published.json", {})
-    return any(k.split("_")[0] == platform and v and (not ok_only or str(v).startswith("OK"))
-               for k, v in res.items())
+def settled(day, slot, ok_only=False):
+    """Un envoi (plateforme, long|short) est réglé quand un résultat est enregistré (ok_only : réussi seulement)."""
+    v = store._read(store.day_dir(day) / "published.json", {}).get(result_key(*slot))
+    return bool(v) and (not ok_only or str(v).startswith("OK"))
 
 
 def tick():
@@ -171,21 +187,30 @@ def tick():
     if not times:  # aucune plateforme activée
         store.set_flag(day, "done")
         return True
-    # « maintenant » reprend aussi les plateformes en échec ; l'heure prévue ne reprend que celles pas encore tentées
-    due = [p for p, t in times.items() if (forced and not settled(day, p, True)) or (now >= t and not settled(day, p))]
+    # « maintenant » reprend aussi les envois en échec ; l'heure prévue ne reprend que ceux pas encore tentés
+    due = [k for k, t in times.items() if (forced and not settled(day, k, True)) or (now >= t and not settled(day, k))]
     if not due:
-        pending = sorted(t for p, t in times.items() if not settled(day, p))
+        pending = sorted(t for k, t in times.items() if not settled(day, k))
         note(f"prochaine étape : {(gen_time if now < gen_time else pending[0] if pending else pub_time):%Y-%m-%d %H:%M}")
         return False
 
-    ok = run_step(day, "publication (" + ", ".join(due) + ")", ["--platforms", ",".join(due)])
+    ok = True
+    for kind in ("long", "short"):  # un passage par type de vidéo : leurs heures peuvent différer
+        group = [k for k in due if k[1] == kind]
+        if not group:
+            continue
+        plats = sorted({p for p, _ in group})
+        ok = run_step(day, f"publication {'vidéo longue' if kind == 'long' else 'Short'} (" + ", ".join(plats) + ")",
+                      ["--platforms", ",".join(plats), "--kind", kind]) and ok
+        if not store.day_dir(day).exists():
+            break
     if store.day_dir(day).exists():
-        if not ok and not all(settled(day, p) for p in due):
+        if not ok and not all(settled(day, k) for k in due):
             # la création ou le lancement a échoué avant tout résultat : on s'arrête là pour ne pas boucler
             log(f"abandon pour le {day} : relance depuis l'admin ou avec "
                 f"`docker compose exec shorts python main.py --date {day}`")
             store.set_flag(day, "failed")
-        elif all(settled(day, p) for p in times):
+        elif all(settled(day, k) for k in times):
             res = store._read(store.day_dir(day) / "published.json", {})
             if all(str(v).startswith("OK") for v in res.values()):
                 store.set_flag(day, "failed", False)

@@ -23,13 +23,13 @@
   {% endfor %}</table>
   <p class="hint">Choisis, plateforme par plateforme, ce qui part : la vidéo longue, le Short, ou les deux. Une plateforme décochée dans « Active » ne reçoit rien. Sur Instagram et TikTok, la vidéo longue (horizontale) s'affiche avec des bandes noires et, sur Instagram, hors de l'onglet Reels.</p>
   <label for="pt">Heure de publication par plateforme</label>
-  <div class="row2">
-    <div><label for="pt-youtube" class="small">YouTube</label><input id="pt-youtube" type="time" name="publish_at_youtube" value="{{ s.publish_at_youtube }}"></div>
-    <div><label for="pt-instagram" class="small">Instagram</label><input id="pt-instagram" type="time" name="publish_at_instagram" value="{{ s.publish_at_instagram }}"></div>
-    <div><label for="pt-tiktok" class="small">TikTok</label><input id="pt-tiktok" type="time" name="publish_at_tiktok" value="{{ s.publish_at_tiktok }}"></div>
-    <div><label for="pt-facebook" class="small">Facebook</label><input id="pt-facebook" type="time" name="publish_at_facebook" value="{{ s.publish_at_facebook }}"></div>
-  </div>
-  <p class="hint">Laisse vide pour utiliser l'heure de publication générale ({{ s.publish_at }}). Une plateforme dont l'heure est passée publie dès la création des vidéos.</p>
+  <table class="grid-table"><tr><th></th><th>Vidéo longue</th><th>Short</th></tr>
+  {% for k, n in [('youtube','YouTube'),('instagram','Instagram'),('tiktok','TikTok'),('facebook','Facebook')] %}
+  <tr><th>{{ n }}</th>
+    <td><input id="pt-{{ k }}" type="time" name="publish_at_{{ k }}" value="{{ s['publish_at_' ~ k] }}" aria-label="{{ n }} : heure de la vidéo longue"></td>
+    <td><input id="pts-{{ k }}" type="time" name="publish_at_{{ k }}_short" value="{{ s['publish_at_' ~ k ~ '_short'] }}" aria-label="{{ n }} : heure du Short"></td></tr>
+  {% endfor %}</table>
+  <p class="hint">Laisse vide pour la vidéo longue : heure générale ({{ s.publish_at }}). Laisse vide pour le Short : même heure que la vidéo longue. Une heure déjà passée publie dès la création des vidéos. Le lien « vidéo longue » ajouté à la description du Short n'apparaît que si la longue est partie avant.</p>
   <label for="tm">Mode TikTok</label>
   <select id="tm" name="tiktok_mode">
     <option value="inbox" {{ 'selected' if s.tiktok_mode == 'inbox' }}>Brouillon dans ma boîte TikTok (je publie depuis l'appli)</option>

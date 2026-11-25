@@ -23,10 +23,10 @@
       <div class="kpi"><span>Validation</span><b>{{ 'exigée' if s.require_approval else 'non' }}</b></div>
     </div>
     <p class="small" style="margin-top:12px">Plateformes :
-      <span class="pill {{ 'ok' if s.publish_youtube }}">YouTube {{ (s.publish_at_youtube or s.publish_at) if s.publish_youtube else 'coupé' }}</span>
-      <span class="pill {{ 'ok' if s.publish_instagram }}">Instagram {{ (s.publish_at_instagram or s.publish_at) if s.publish_instagram else 'coupé' }}</span>
-      <span class="pill {{ 'ok' if s.publish_tiktok }}">TikTok {{ (s.publish_at_tiktok or s.publish_at) if s.publish_tiktok else 'coupé' }}</span>
-      <span class="pill {{ 'ok' if s.publish_facebook }}">Facebook {{ (s.publish_at_facebook or s.publish_at) if s.publish_facebook else 'coupé' }}</span></p>
+      <span class="pill {{ 'ok' if s.publish_youtube }}">YouTube {{ ((s.publish_at_youtube or s.publish_at) ~ (' · Short ' ~ s.publish_at_youtube_short if s.publish_at_youtube_short and s.publish_at_youtube_short != (s.publish_at_youtube or s.publish_at) else '')) if s.publish_youtube else 'coupé' }}</span>
+      <span class="pill {{ 'ok' if s.publish_instagram }}">Instagram {{ ((s.publish_at_instagram or s.publish_at) ~ (' · Short ' ~ s.publish_at_instagram_short if s.publish_at_instagram_short and s.publish_at_instagram_short != (s.publish_at_instagram or s.publish_at) else '')) if s.publish_instagram else 'coupé' }}</span>
+      <span class="pill {{ 'ok' if s.publish_tiktok }}">TikTok {{ ((s.publish_at_tiktok or s.publish_at) ~ (' · Short ' ~ s.publish_at_tiktok_short if s.publish_at_tiktok_short and s.publish_at_tiktok_short != (s.publish_at_tiktok or s.publish_at) else '')) if s.publish_tiktok else 'coupé' }}</span>
+      <span class="pill {{ 'ok' if s.publish_facebook }}">Facebook {{ ((s.publish_at_facebook or s.publish_at) ~ (' · Short ' ~ s.publish_at_facebook_short if s.publish_at_facebook_short and s.publish_at_facebook_short != (s.publish_at_facebook or s.publish_at) else '')) if s.publish_facebook else 'coupé' }}</span></p>
     <p class="small mute">Heure de Paris. YouTube publie en « {{ s.youtube_privacy }} ». <a href="/reglages">Modifier</a></p>
   </div>
   <div class="card"><h2>Prochains sujets</h2>
